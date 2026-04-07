@@ -1,0 +1,36 @@
+# Root gitignore for Mines project
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Frontend (mines-frontend)
+mines-frontend/node_modules/
+mines-frontend/.next/
+mines-frontend/out/
+mines-frontend/build/
+mines-frontend/.env*
+mines-frontend/next-env.d.ts
+mines-frontend/*.tsbuildinfo
+
+# Backend (mines-service)
+mines-service/target/
+mines-service/bin/
+mines-service/build/
+mines-service/.gradle/
+mines-service/out/
+mines-service/uploads/
+mines-service/*.log
+
+# User-specific / Lock files
+package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
