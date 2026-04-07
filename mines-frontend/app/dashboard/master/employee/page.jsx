@@ -14,6 +14,8 @@ import {
 } from "@mui/icons-material";
 import { useRouter } from "next/navigation";
 import { palette } from "@/theme";
+import { useFormik } from "formik";
+import * as Yup from "yup";
 
 const mockEmployees = [
     {
@@ -36,14 +38,49 @@ export default function EmployeePage() {
     const [isInitialized, setIsInitialized] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
 
-    // Initial state for form
-    const initialFormState = {
+    // Initial values for Formik
+    const initialValues = {
         firstName: "", lastName: "", gender: "male", role: "", consignor: "", plant: "",
         dob: "", doj: "", addressLine1: "", addressLine2: "", district: "", state: "",
-        pincode: "", phone: "", userName: "", password: ""
+        pincode: "", phone: "", userName: "", password: "",
+        salaryType: "", basicSalary: "", accountHolderName: "", bankName: "",
+        accountNumber: "", ifscCode: "", aadhaarNumber: "", panNumber: "", drivingLicense: ""
     };
 
-    const [formData, setFormData] = useState(initialFormState);
+    // Yup validation schema
+    const employeeValidationSchema = Yup.object({
+        firstName: Yup.string().required("First name is required"),
+        lastName: Yup.string().required("Last name is required"),
+        role: Yup.string().required("Role is required"),
+        phone: Yup.string().matches(/^[0-9]{10,12}$/, "Phone must be 10-12 digits").required("Contact number is required"),
+        pincode: Yup.string().matches(/^[0-9]{6}$/, "Pincode must be 6 digits"),
+        addressLine1: Yup.string().required("Address is required"),
+        district: Yup.string().required("District is required"),
+        state: Yup.string().required("State is required"),
+        userName: Yup.string().required("User name is required"),
+        password: Yup.string().min(6, "Password must be at least 6 characters").required("Password is required"),
+    });
+
+    const formik = useFormik({
+        initialValues,
+        validationSchema: employeeValidationSchema,
+        validateOnBlur: true,
+        validateOnChange: false,
+        onSubmit: (values) => {
+            const nextId = employees.length > 0 ? (Math.max(...employees.map(e => parseInt(e.id))) + 1).toString().padStart(5, '0') : "00001";
+            const newEmployee = {
+                id: nextId,
+                ...values
+            };
+            setEmployees([...employees, newEmployee]);
+            setShowSuccess(true);
+
+            // Auto close after 2 seconds
+            setTimeout(() => {
+                handleCloseModal();
+            }, 2000);
+        },
+    });
 
     // Persist data in localStorage
     useEffect(() => {
@@ -70,32 +107,30 @@ export default function EmployeePage() {
     }, [employees, isInitialized]);
 
     const handleOpenModal = () => {
-        setFormData(initialFormState);
+        formik.resetForm();
         setOpenModal(true);
     };
 
     const handleCloseModal = () => {
         setOpenModal(false);
         setActiveStep(0);
+        formik.resetForm();
         setShowSuccess(false);
     };
 
-    const handleSubmit = () => {
-        const nextId = employees.length > 0 ? (Math.max(...employees.map(e => parseInt(e.id))) + 1).toString().padStart(5, '0') : "00001";
-        const newEmployee = {
-            id: nextId,
-            ...formData
-        };
-        setEmployees([...employees, newEmployee]);
-        setShowSuccess(true);
-        
-        // Auto close after 2 seconds
-        setTimeout(() => {
-            handleCloseModal();
-        }, 2000);
+    const handleNext = async () => {
+        const errors = await formik.validateForm();
+        if (activeStep === 0) {
+            const step1Fields = ['firstName', 'lastName', 'role', 'phone', 'addressLine1', 'district', 'state', 'pincode'];
+            const touchedFields = step1Fields.reduce((acc, field) => ({ ...acc, [field]: true }), {});
+            formik.setTouched(touchedFields);
+            const step1Errors = step1Fields.filter(key => errors[key]);
+            if (step1Errors.length > 0) return;
+        } else if (activeStep === 1) {
+            // Add any step 2 validation here if needed
+        }
+        setActiveStep((prev) => prev + 1);
     };
-
-    const handleNext = () => setActiveStep((prev) => prev + 1);
     const handleBack = () => setActiveStep((prev) => prev - 1);
 
     const steps = ["Basic Employee Details", "Documents & Access", "Login Access"];
@@ -151,14 +186,18 @@ export default function EmployeePage() {
     };
 
     const renderField = (label, placeholder, isSelect = false, type = "text", field = "") => {
+        const value = formik.values[field] || "";
+        const error = formik.touched[field] && formik.errors[field];
+
         if (type === "radio") {
             return (
                 <Box sx={{ width: '100%' }}>
                     <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
-                    <RadioGroup 
-                        row 
-                        value={formData[field]} 
-                        onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
+                    <RadioGroup
+                        row
+                        name={field}
+                        value={value}
+                        onChange={formik.handleChange}
                     >
                         <FormControlLabel value="male" control={<Radio size="small" sx={{ color: '#D1D5DB', '&.Mui-checked': { color: '#2D3FE2' } }} />} label={<Typography sx={{ fontSize: '13px', color: '#6B7280' }}>Male</Typography>} />
                         <FormControlLabel value="female" control={<Radio size="small" sx={{ color: '#D1D5DB', '&.Mui-checked': { color: '#2D3FE2' } }} />} label={<Typography sx={{ fontSize: '13px', color: '#6B7280' }}>Female</Typography>} />
@@ -171,12 +210,15 @@ export default function EmployeePage() {
             <Box sx={{ width: '100%' }}>
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
                 {isSelect ? (
-                    <Select 
-                        fullWidth size="small" 
-                        value={formData[field]}
-                        onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
-                        displayEmpty 
-                        sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: formData[field] ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                    <Select
+                        fullWidth size="small"
+                        name={field}
+                        value={value}
+                        onChange={formik.handleChange}
+                        onBlur={formik.handleBlur}
+                        error={!!error}
+                        displayEmpty
+                        sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
                     >
                         <MenuItem value="">{placeholder}</MenuItem>
                         <MenuItem value="Admin">Admin</MenuItem>
@@ -184,14 +226,25 @@ export default function EmployeePage() {
                         <MenuItem value="Staff">Staff</MenuItem>
                     </Select>
                 ) : (
-                    <TextField 
-                        fullWidth size="small" 
-                        type={type} 
-                        placeholder={placeholder} 
-                        variant="outlined" 
-                        value={formData[field]}
-                        onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }} 
+                    <TextField
+                        fullWidth size="small"
+                        name={field}
+                        type={type}
+                        placeholder={placeholder}
+                        variant="outlined"
+                        value={value}
+                        onChange={(e) => {
+                            if (field === 'bankName' || field === 'accountHolderName') {
+                                const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                                formik.setFieldValue(field, val);
+                            } else {
+                                formik.handleChange(e);
+                            }
+                        }}
+                        onBlur={formik.handleBlur}
+                        error={!!error}
+                        helperText={error}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
                     />
                 )}
             </Box>
@@ -273,15 +326,15 @@ export default function EmployeePage() {
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
                         {/* Salary Details */}
                         <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Salary Details</Typography></Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Salary Type", "Select salary type", true)}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Basic Salary", "Enter basic salary")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Salary Type", "Select salary type", true, "text", "salaryType")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Basic Salary", "Enter basic salary", false, "text", "basicSalary")}</Box>
 
                         {/* Bank Details */}
                         <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Bank Details</Typography></Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Account Holder Name", "Enter name")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Bank Name", "Enter bank name")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Account Number", "Enter account number")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("IFSC Code", "Enter IFSC code")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Account Holder Name", "Enter name", false, "text", "accountHolderName")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Bank Name", "Enter bank name", false, "text", "bankName")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Account Number", "Enter account number", false, "text", "accountNumber")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("IFSC Code", "Enter IFSC code", false, "text", "ifscCode")}</Box>
 
                         {/* Upload Passbook */}
                         <Box sx={{ width: itemWidth, mt: 1 }}>
@@ -292,13 +345,13 @@ export default function EmployeePage() {
 
                         {/* Upload Documents */}
                         <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Upload Documents</Typography></Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Aadhaar Number", "Enter account number")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Aadhaar Number", "Enter aadhaar number", false, "text", "aadhaarNumber")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderUploadButton("Upload Aadhaar")}</Box>
 
-                        <Box sx={{ width: itemWidth }}>{renderField("PAN Number", "Enter account number")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("PAN Number", "Enter PAN number", false, "text", "panNumber")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderUploadButton("Upload PAN")}</Box>
 
-                        <Box sx={{ width: itemWidth }}>{renderField("Driving License Number", "Enter account number")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Driving License Number", "Enter driving license number", false, "text", "drivingLicense")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderUploadButton("Upload Driving License")}</Box>
                     </Box>
                 );
@@ -484,7 +537,7 @@ export default function EmployeePage() {
                                 )}
                                 <Button
                                     variant="contained"
-                                    onClick={activeStep < 2 ? handleNext : handleSubmit}
+                                    onClick={activeStep < 2 ? handleNext : formik.handleSubmit}
                                     sx={{
                                         backgroundColor: '#2D3FE2',
                                         borderRadius: '12px',

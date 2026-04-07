@@ -1,0 +1,15 @@
+﻿C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\dashboard\master\company\page.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\dashboard\master\customer\page.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\dashboard\master\employee\page.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\dashboard\master\product\page.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\dashboard\master\site\page.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\dashboard\master\transport\page.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\dashboard\layout.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\dashboard\page.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\login\page.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\layout.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\app\page.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\src\components\layout\DashboardLayout.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\src\components\layout\Sidebar.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\src\features\auth\components\LoginForm.jsx
+C:\Users\Keydraft\Desktop\swipe_right\mines-frontend\src\theme\ThemeRegistry.jsx

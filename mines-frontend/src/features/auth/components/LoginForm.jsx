@@ -18,30 +18,69 @@ import {
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { palette } from "@/theme";
+import { authApi } from "@/services/api";
+import { useFormik } from "formik";
+import * as Yup from "yup";
 
 export default function LoginForm() {
     const router = useRouter();
-    const [username, setUsername] = useState("");
-    const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [errors, setErrors] = useState({});
+    const [submitError, setSubmitError] = useState("");
 
-    const validate = () => {
-        const newErrors = {};
-        if (!username.trim()) newErrors.username = "Username is required";
-        if (!password.trim()) newErrors.password = "Password is required";
-        setErrors(newErrors);
-        return Object.keys(newErrors).length === 0;
-    };
+    const validationSchema = Yup.object({
+        username: Yup.string().required("Username is required"),
+        password: Yup.string().required("Password is required"),
+    });
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!validate()) return;
+    const formik = useFormik({
+        initialValues: {
+            username: "",
+            password: "",
+        },
+        validationSchema,
+        onSubmit: async (values) => {
+            setLoading(true);
+            setSubmitError("");
+
+            try {
+                const response = await authApi.login(values.username, values.password);
+                if (response.success) {
+                    localStorage.setItem("user", JSON.stringify(response.data));
+                    router.push("/dashboard");
+                } else {
+                    setSubmitError(response.message || "Login failed");
+                }
+            } catch (error) {
+                console.error("Login error:", error);
+                setSubmitError(
+                    error.response?.data?.message || 
+                    "An error occurred during login. Please ensure the backend is running."
+                );
+            } finally {
+                setLoading(false);
+            }
+        },
+    });
+
+    const handleRegister = async () => {
+        if (!formik.values.username || !formik.values.password) {
+            formik.setTouched({ username: true, password: true });
+            return;
+        }
+        
         setLoading(true);
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        setLoading(false);
-        router.push("/dashboard");
+        setSubmitError("");
+        try {
+            const response = await authApi.registerAdmin(formik.values.username, formik.values.password);
+            if (response.success) {
+                setSubmitError("Admin registered! Now click LOGIN.");
+            }
+        } catch (error) {
+            setSubmitError("Registration failed: " + (error.response?.data?.message || "Unknown error"));
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -153,7 +192,7 @@ export default function LoginForm() {
                 {/* ── Right Panel: Login Form (Dark Background) ── */}
                 <Box
                     component="form"
-                    onSubmit={handleSubmit}
+                    onSubmit={formik.handleSubmit}
                     sx={{
                         flex: 1,
                         display: "flex",
@@ -177,22 +216,25 @@ export default function LoginForm() {
                     >
                         Sign In
                     </Typography>
+                    
+                    {submitError && (
+                        <Typography sx={{ color: '#EF4444', mb: 2, fontSize: '0.85rem', textAlign: 'center', backgroundColor: 'rgba(239, 68, 68, 0.1)', py: 1, borderRadius: '4px' }}>
+                            {submitError}
+                        </Typography>
+                    )}
 
                     {/* Username */}
                     <TextField
-                        id="login-username"
+                        id="username"
+                        name="username"
                         fullWidth
                         placeholder="Enter User Name*"
-                        required
                         autoComplete="off"
-                        value={username}
-                        onChange={(e) => {
-                            setUsername(e.target.value);
-                            if (errors.username)
-                                setErrors((p) => ({ ...p, username: undefined }));
-                        }}
-                        error={!!errors.username}
-                        helperText={errors.username}
+                        value={formik.values.username}
+                        onChange={formik.handleChange}
+                        onBlur={formik.handleBlur}
+                        error={formik.touched.username && !!formik.errors.username}
+                        helperText={formik.touched.username && formik.errors.username}
                         sx={{
                             mb: 2.5,
                             "& .MuiOutlinedInput-root": {
@@ -228,20 +270,17 @@ export default function LoginForm() {
 
                     {/* Password */}
                     <TextField
-                        id="login-password"
+                        id="password"
+                        name="password"
                         fullWidth
                         type={showPassword ? "text" : "password"}
                         placeholder="Enter Password *"
-                        required
                         autoComplete="new-password"
-                        value={password}
-                        onChange={(e) => {
-                            setPassword(e.target.value);
-                            if (errors.password)
-                                setErrors((p) => ({ ...p, password: undefined }));
-                        }}
-                        error={!!errors.password}
-                        helperText={errors.password}
+                        value={formik.values.password}
+                        onChange={formik.handleChange}
+                        onBlur={formik.handleBlur}
+                        error={formik.touched.password && !!formik.errors.password}
+                        helperText={formik.touched.password && formik.errors.password}
                         InputProps={{
                             endAdornment: (
                                 <InputAdornment position="end">
@@ -324,6 +363,20 @@ export default function LoginForm() {
                     >
                         LOGIN
                     </Button>
+                    
+                    <Typography 
+                        variant="body2" 
+                        onClick={handleRegister}
+                        sx={{ 
+                            mt: 2, 
+                            color: palette.text.muted, 
+                            textAlign: 'center', 
+                            cursor: 'pointer',
+                            '&:hover': { color: palette.text.white }
+                        }}
+                    >
+                        First time? Register Admin
+                    </Typography>
                 </Box>
             </Box>
         </Box>

@@ -14,6 +14,9 @@ import {
 } from "@mui/icons-material";
 import { useRouter } from "next/navigation";
 import { palette } from "@/theme";
+import { productApi, adminApi } from "@/services/api";
+import { useFormik } from "formik";
+import * as Yup from "yup";
 
 const mockProducts = [
     {
@@ -55,8 +58,10 @@ export default function ProductPage() {
     const [isInitialized, setIsInitialized] = useState(false);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editingId, setEditingId] = useState(null);
 
-    const initialFormState = {
+    const initialValues = {
         name: "",
         shortName: "",
         hsnc: "",
@@ -66,56 +71,72 @@ export default function ProductPage() {
         plantPrices: []
     };
 
-    const [formData, setFormData] = useState(initialFormState);
-    const [isEditing, setIsEditing] = useState(false);
-    const [editingId, setEditingId] = useState(null);
+    const validationSchema = Yup.object({
+        name: Yup.string().required("Product name is required"),
+        shortName: Yup.string().required("Short name is required"),
+        hsnc: Yup.string().required("HSN Code is required"),
+        gst: Yup.number().typeError("GST must be a number").required("GST is required"),
+        rmType: Yup.string().required("RM Type is required"),
+    });
 
-    // Persist data in localStorage
-    useEffect(() => {
-        if (typeof window !== "undefined") {
-            const savedProducts = localStorage.getItem("products");
-            if (savedProducts !== null) {
-                try {
-                    const parsed = JSON.parse(savedProducts);
-                    if (Array.isArray(parsed)) {
-                        setProducts(parsed);
-                    }
-                } catch (e) {
-                    console.error("Error parsing saved products", e);
-                }
-            } else {
-                localStorage.setItem("products", JSON.stringify(mockProducts));
+    const formik = useFormik({
+        initialValues,
+        validationSchema,
+        onSubmit: async (values) => {
+            const companyId = values.plantPrices?.[0]?.companyId || null;
+            if (!companyId) {
+                alert("No company found. Please create a company and site first.");
+                return;
             }
-            setIsInitialized(true);
-        }
-    }, []);
 
-    useEffect(() => {
-        if (typeof window !== "undefined" && isInitialized) {
-            localStorage.setItem("products", JSON.stringify(products));
-        }
-    }, [products, isInitialized]);
+            const payload = {
+                name: values.name,
+                shortName: values.shortName,
+                hsnCode: values.hsnc,
+                gstPercentage: parseFloat(values.gst),
+                rmType: values.rmType || "CRUSHER",
+                active: values.status === "Active",
+                companyId: companyId,
+                prices: values.plantPrices.map(p => ({
+                    branchId: p.branchId,
+                    rate: parseFloat(p.rate)
+                }))
+            };
+
+            try {
+                const response = await productApi.upsert(payload, isEditing ? editingId : null);
+                if (response.success) {
+                    const listResp = await productApi.getAll();
+                    setProducts(listResp.data);
+                    handleCloseModal();
+                }
+            } catch (error) {
+                console.error("Error saving product:", error);
+                alert("Failed to save product: " + (error.response?.data?.message || "Unknown error"));
+            }
+        },
+    });
 
     const handleOpenModal = () => {
-        // Fetch sites from companies to initialize plant prices
-        let availableSites = [];
+        let availableBranches = [];
         const savedCompanies = localStorage.getItem("companies");
         if (savedCompanies) {
             const companies = JSON.parse(savedCompanies);
-            availableSites = companies.flatMap(c => (c.sites || []).map(s => s.name));
+            availableBranches = companies.flatMap(c => (c.branches || []).map(b => ({
+                id: b.id,
+                name: b.name,
+                companyId: c.id
+            })));
         }
 
-        // Default sites if none found in localStorage
-        if (availableSites.length === 0) {
-            availableSites = ["GIRIJA PURAM", "ARAPAKKAM", "MAGARAL"];
-        }
-
-        const initialPlantPrices = availableSites.map(siteName => ({
-            siteName,
-            rate: "0"
+        const initialPlantPrices = availableBranches.map(branch => ({
+            branchId: branch.id,
+            siteName: branch.name,
+            rate: "0",
+            companyId: branch.companyId
         }));
 
-        setFormData({ ...initialFormState, plantPrices: initialPlantPrices });
+        formik.setValues({ ...initialValues, plantPrices: initialPlantPrices });
         setIsEditing(false);
         setEditingId(null);
         setOpenModal(true);
@@ -123,56 +144,47 @@ export default function ProductPage() {
 
     const handleCloseModal = () => {
         setOpenModal(false);
-    };
-
-    const handleInputChange = (field, value) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
+        formik.resetForm();
     };
 
     const handlePlantPriceChange = (index, value) => {
-        const newPlantPrices = [...formData.plantPrices];
+        const newPlantPrices = [...formik.values.plantPrices];
         newPlantPrices[index].rate = value;
-        setFormData({ ...formData, plantPrices: newPlantPrices });
+        formik.setFieldValue("plantPrices", newPlantPrices);
     };
 
-    const handleSubmit = () => {
-        if (!formData.name || !formData.shortName) return;
-
-        if (isEditing) {
-            setProducts(products.map(p => p.id === editingId ? { ...formData, id: editingId } : p));
-        } else {
-            const nextId = products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1;
-            setProducts([...products, { ...formData, id: nextId }]);
-        }
-        handleCloseModal();
-    };
 
     const handleEditProduct = (product) => {
-        // Fetch current sites to ensure all are listed
-        let currentSites = [];
+        // Fetch current branches to ensure all are listed
+        let currentBranches = [];
         const savedCompanies = localStorage.getItem("companies");
         if (savedCompanies) {
             const companies = JSON.parse(savedCompanies);
-            currentSites = companies.flatMap(c => (c.sites || []).map(s => s.name));
-        }
-        
-        if (currentSites.length === 0) {
-            currentSites = ["GIRIJA PURAM", "ARAPAKKAM", "MAGARAL"];
+            currentBranches = companies.flatMap(c => (c.branches || []).map(b => ({
+                id: b.id,
+                name: b.name,
+                companyId: c.id
+            })));
         }
 
-        // Merge existing prices with current sites
-        const mergedPlantPrices = currentSites.map(siteName => {
-            const existing = (product.plantPrices || []).find(p => p.siteName === siteName);
-            return existing ? existing : { siteName, rate: "0" };
+        // Merge existing backend prices with current branches
+        const mergedPlantPrices = currentBranches.map(branch => {
+            const existing = (product.prices || []).find(p => p.branchId === branch.id);
+            return {
+                branchId: branch.id,
+                siteName: branch.name,
+                rate: existing ? existing.rate.toString() : "0",
+                companyId: branch.companyId
+            };
         });
 
-        setFormData({
-            name: product.name,
-            shortName: product.shortName,
-            hsnc: product.hsnc,
-            gst: product.gst,
-            rmType: product.rmType,
-            status: product.status,
+        formik.setValues({
+            name: product.name || "",
+            shortName: product.shortName || "",
+            hsnc: product.hsnCode || "",
+            gst: product.gstPercentage?.toString() || "0",
+            rmType: product.rmType || "",
+            status: product.active ? "Active" : "Inactive",
             plantPrices: mergedPlantPrices
         });
         setIsEditing(true);
@@ -180,8 +192,18 @@ export default function ProductPage() {
         setOpenModal(true);
     };
 
-    const handleDeleteProduct = (id) => {
-        setProducts(products.filter(p => p.id !== id));
+    const handleDeleteProduct = async (id) => {
+        if (window.confirm("Are you sure you want to delete this product?")) {
+            try {
+                const response = await productApi.delete(id);
+                if (response.success) {
+                    setProducts(products.filter(p => p.id !== id));
+                }
+            } catch (error) {
+                console.error("Error deleting product:", error);
+                alert("Failed to delete product: " + (error.response?.data?.message || "Unknown error"));
+            }
+        }
     };
 
     const filteredProducts = products.filter(product => 
@@ -388,10 +410,14 @@ export default function ProductPage() {
                                 <TextField 
                                     fullWidth 
                                     size="small"
+                                    name="name"
                                     placeholder="Enter Product Name"
                                     variant="outlined" 
-                                    value={formData.name}
-                                    onChange={(e) => handleInputChange("name", e.target.value)}
+                                    value={formik.values.name}
+                                    onChange={formik.handleChange}
+                                    onBlur={formik.handleBlur}
+                                    error={formik.touched.name && !!formik.errors.name}
+                                    helperText={formik.touched.name && formik.errors.name}
                                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', backgroundColor: '#fff' } }}
                                 />
                             </Box>
@@ -400,10 +426,14 @@ export default function ProductPage() {
                                 <TextField 
                                     fullWidth 
                                     size="small"
+                                    name="shortName"
                                     placeholder="Enter Short Name"
                                     variant="outlined" 
-                                    value={formData.shortName}
-                                    onChange={(e) => handleInputChange("shortName", e.target.value)}
+                                    value={formik.values.shortName}
+                                    onChange={formik.handleChange}
+                                    onBlur={formik.handleBlur}
+                                    error={formik.touched.shortName && !!formik.errors.shortName}
+                                    helperText={formik.touched.shortName && formik.errors.shortName}
                                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', backgroundColor: '#fff' } }}
                                 />
                             </Box>
@@ -416,10 +446,14 @@ export default function ProductPage() {
                                 <TextField 
                                     fullWidth 
                                     size="small"
+                                    name="hsnc"
                                     placeholder="HSN Code"
                                     variant="outlined" 
-                                    value={formData.hsnc}
-                                    onChange={(e) => handleInputChange("hsnc", e.target.value)}
+                                    value={formik.values.hsnc}
+                                    onChange={formik.handleChange}
+                                    onBlur={formik.handleBlur}
+                                    error={formik.touched.hsnc && !!formik.errors.hsnc}
+                                    helperText={formik.touched.hsnc && formik.errors.hsnc}
                                     sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', backgroundColor: '#fff' } }}
                                 />
                             </Box>
@@ -428,10 +462,14 @@ export default function ProductPage() {
                                 <TextField 
                                     fullWidth 
                                     size="small"
+                                    name="gst"
                                     placeholder="0"
                                     variant="outlined" 
-                                    value={formData.gst}
-                                    onChange={(e) => handleInputChange("gst", e.target.value)}
+                                    value={formik.values.gst}
+                                    onChange={formik.handleChange}
+                                    onBlur={formik.handleBlur}
+                                    error={formik.touched.gst && !!formik.errors.gst}
+                                    helperText={formik.touched.gst && formik.errors.gst}
                                     InputProps={{
                                         sx: { position: 'relative' },
                                         startAdornment: (
@@ -455,15 +493,18 @@ export default function ProductPage() {
                             <Select 
                                 fullWidth 
                                 size="small"
+                                name="rmType"
                                 displayEmpty 
-                                value={formData.rmType}
-                                onChange={(e) => handleInputChange("rmType", e.target.value)}
+                                value={formik.values.rmType}
+                                onChange={formik.handleChange}
+                                onBlur={formik.handleBlur}
+                                error={formik.touched.rmType && !!formik.errors.rmType}
                                 sx={{ borderRadius: '8px', backgroundColor: '#fff' }}
                             >
                                 <MenuItem value="" disabled>Select RM Type</MenuItem>
                                 <MenuItem value="CRUSHER">CRUSHER</MenuItem>
-                                <MenuItem value="Raw Material">Raw Material</MenuItem>
-                                <MenuItem value="Finished Good">Finished Good</MenuItem>
+                                <MenuItem value="QUARRY">QUARRY</MenuItem>
+                                <MenuItem value="BY_PRODUCT">BY PRODUCT</MenuItem>
                             </Select>
                         </Box>
 
@@ -478,7 +519,7 @@ export default function ProductPage() {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {(formData?.plantPrices || []).map((plant, index) => (
+                                    {(formik.values.plantPrices || []).map((plant, index) => (
                                         <TableRow key={index}>
                                             <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 2 }}>{index + 1}</TableCell>
                                             <TableCell sx={{ borderBottom: '1px solid #F3F4F6', color: '#374151', fontWeight: 500 }}>{plant.siteName}</TableCell>
@@ -513,8 +554,9 @@ export default function ProductPage() {
                             <FormControlLabel
                                 control={
                                     <Switch
-                                        checked={formData.status === "Active"}
-                                        onChange={(e) => handleInputChange("status", e.target.checked ? "Active" : "Inactive")}
+                                        name="status"
+                                        checked={formik.values.status === "Active"}
+                                        onChange={(e) => formik.setFieldValue("status", e.target.checked ? "Active" : "Inactive")}
                                         sx={{ 
                                             '& .MuiSwitch-switchBase.Mui-checked': { color: '#3B82F6' }, 
                                             '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#3B82F6' } 
@@ -528,7 +570,7 @@ export default function ProductPage() {
                             <Box sx={{ display: 'flex', gap: 2 }}>
                                 <Button 
                                     variant="contained" 
-                                    onClick={handleSubmit}
+                                    onClick={formik.handleSubmit}
                                     sx={{ 
                                         backgroundColor: '#3B82F6', 
                                         color: '#fff', 

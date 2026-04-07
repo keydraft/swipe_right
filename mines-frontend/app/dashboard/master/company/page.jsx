@@ -14,6 +14,9 @@ import {
 } from "@mui/icons-material";
 import { useRouter } from "next/navigation";
 import { palette } from "@/theme";
+import { adminApi } from "@/services/api";
+import { useFormik, FormikProvider, FieldArray } from "formik";
+import * as Yup from "yup";
 
 const mockCompanies = [
     {
@@ -65,29 +68,27 @@ export default function CompanyPage() {
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
 
-    // Persist data in localStorage
+    // Fetch data from backend
     useEffect(() => {
-        if (typeof window !== "undefined") {
-            const savedCompanies = localStorage.getItem("companies");
-            if (savedCompanies !== null) {
-                try {
-                    const parsed = JSON.parse(savedCompanies);
-                    if (Array.isArray(parsed)) {
-                        setCompanies(parsed);
-                    }
-                } catch (e) {
-                    console.error("Error parsing saved companies", e);
+        const fetchCompanies = async () => {
+            try {
+                const response = await adminApi.getCompanies();
+                if (response.success) {
+                    setCompanies(response.data);
                 }
-            } else {
-                // If no data in localStorage, initialize it with mock data
-                localStorage.setItem("companies", JSON.stringify(mockCompanies));
+            } catch (error) {
+                console.error("Error fetching companies:", error);
+                // Fallback to localStorage if backend fails (optional, but good for dev)
+                const savedCompanies = localStorage.getItem("companies");
+                if (savedCompanies) setCompanies(JSON.parse(savedCompanies));
             }
             setIsInitialized(true);
-        }
+        };
+        fetchCompanies();
     }, []);
 
     useEffect(() => {
-        if (typeof window !== "undefined" && isInitialized) {
+        if (typeof window !== "undefined" && isInitialized && companies.length > 0) {
             localStorage.setItem("companies", JSON.stringify(companies));
         }
     }, [companies, isInitialized]);
@@ -98,15 +99,94 @@ export default function CompanyPage() {
         siteType: "", plantType: "", active: true
     };
 
-    const initialFormState = {
+    const initialValues = {
         name: "", invoiceInitial: "", gstn: "", addressLine1: "", addressLine2: "",
         district: "", state: "", pincode: "", phone: "", alternatePhone: "", emailId: "",
         accountName: "", shortName: "", accountNo: "", bankName: "", branch: "",
-        ifsc: "", openingBalance: "", openingDate: ""
+        ifsc: "", openingBalance: "", openingDate: "",
+        sites: []
     };
 
-    const [formData, setFormData] = useState(initialFormState);
-    const [sites, setSites] = useState([]);
+    const companyValidationSchema = Yup.object({
+        name: Yup.string().required("Company name is required"),
+        invoiceInitial: Yup.string().required("Invoice initial is required"),
+        gstn: Yup.string().matches(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, "Invalid GSTIN format").required("GSTN is required"),
+        addressLine1: Yup.string().required("Address is required"),
+        district: Yup.string().required("District is required"),
+        state: Yup.string().required("State is required"),
+        pincode: Yup.string().matches(/^[0-9]{6}$/, "Pincode must be 6 digits").required("Pincode is required"),
+        phone: Yup.string().matches(/^[0-9]{10,12}$/, "Phone must be 10-12 digits").required("Phone is required"),
+        emailId: Yup.string().email("Invalid email format"),
+        bankName: Yup.string().matches(/^$|^[a-zA-Z\s]*$/, "Bank name should only contain letters"),
+        branch: Yup.string().matches(/^$|^[a-zA-Z\s]*$/, "Branch should only contain letters"),
+        accountNo: Yup.string().matches(/^$|^[0-9]+$/, "Account number must be numeric"),
+        ifsc: Yup.string().matches(/^$|^[A-Z]{4}0[A-Z0-9]{6}$/, "Invalid IFSC code format"),
+        openingBalance: Yup.number().typeError("Opening balance must be a number").nullable(),
+    });
+
+    const formik = useFormik({
+        initialValues,
+        validationSchema: companyValidationSchema,
+        validateOnBlur: true,
+        validateOnChange: false,
+        onSubmit: async (values) => {
+            const payload = {
+                id: isEditingCompany ? companies[editingCompanyIndex].id : null,
+                name: values.name,
+                invoiceInitial: values.invoiceInitial,
+                gstin: values.gstn,
+                phone: values.phone,
+                alternatePhoneNo: values.alternatePhone,
+                emailId: values.emailId,
+                address: {
+                    addressLine1: values.addressLine1,
+                    addressLine2: values.addressLine2,
+                    district: values.district,
+                    state: values.state,
+                    pincode: values.pincode
+                },
+                bankAccounts: values.accountNo ? [{
+                    accountName: values.accountName,
+                    shortName: values.shortName,
+                    accountNumber: values.accountNo,
+                    bankName: values.bankName,
+                    ifscCode: values.ifsc,
+                    branchName: values.branch,
+                    openingBalance: values.openingBalance,
+                    openingDate: values.openingDate
+                }] : [],
+                branches: values.sites.map(s => ({
+                    name: s.name,
+                    siteType: s.siteType || "PRODUCTION",
+                    branchType: s.plantType || "CRUSHER",
+                    phone: s.contactNo,
+                    alternatePhoneNo: s.alternateNo,
+                    emailId: s.emailId || "",
+                    address: {
+                        addressLine1: s.addressLine1,
+                        addressLine2: s.addressLine2,
+                        district: s.district,
+                        state: s.state,
+                        pincode: s.pincode
+                    }
+                }))
+            };
+
+            try {
+                const response = await adminApi.upsertCompany(payload);
+                if (response.success) {
+                    const listResp = await adminApi.getCompanies();
+                    setCompanies(listResp.data);
+                    setShowSuccess(true);
+                    setTimeout(() => handleCloseModal(), 2000);
+                }
+            } catch (error) {
+                console.error("Error saving company:", error);
+                alert("Failed to save company: " + (error.response?.data?.message || "Unknown error"));
+            }
+        },
+    });
+
     const [currentSite, setCurrentSite] = useState(initialSiteState);
     const [isEditingSite, setIsEditingSite] = useState(false);
     const [editingSiteIndex, setEditingSiteIndex] = useState(null);
@@ -127,8 +207,7 @@ export default function CompanyPage() {
     const handleCloseModal = () => {
         setOpenModal(false);
         setActiveStep(0);
-        setSites([]);
-        setFormData(initialFormState);
+        formik.resetForm();
         setCurrentSite(initialSiteState);
         setIsEditingSite(false);
         setShowSiteForm(true);
@@ -137,56 +216,48 @@ export default function CompanyPage() {
         setShowSuccess(false);
     };
 
-    const handleSubmit = () => {
-        if (isEditingCompany) {
-            const updatedCompanies = [...companies];
-            updatedCompanies[editingCompanyIndex] = {
-                ...updatedCompanies[editingCompanyIndex],
-                ...formData,
-                sites: sites
-            };
-            setCompanies(updatedCompanies);
-        } else {
-            const nextId = companies.length > 0 ? Math.max(...companies.map(c => c.id)) + 1 : 1;
-            const newCompany = {
-                id: nextId,
-                ...formData,
-                sites: sites
-            };
-            setCompanies([...companies, newCompany]);
-        }
-
-        setShowSuccess(true);
-        setTimeout(() => {
-            handleCloseModal();
-        }, 2000);
-    };
 
     const handleEditCompany = (index) => {
         const company = companies[index];
-        setFormData({
+        // Map backend branches back to frontend sites
+        const mappedSites = (company.branches || []).map(b => ({
+            name: b.name,
+            contactNo: b.phone,
+            alternateNo: b.alternatePhoneNo,
+            district: b.address?.district || "",
+            state: b.address?.state || "",
+            pincode: b.address?.pincode || "",
+            addressLine1: b.address?.addressLine1 || "",
+            addressLine2: b.address?.addressLine2 || "",
+            siteType: b.siteType,
+            plantType: b.branchType,
+            active: b.active !== false
+        }));
+
+        formik.setValues({
             name: company.name || "",
             invoiceInitial: company.invoiceInitial || "",
-            gstn: company.gstn || "",
-            addressLine1: company.addressLine1 || "",
-            addressLine2: company.addressLine2 || "",
-            district: company.district || "",
-            state: company.state || "",
-            pincode: company.pincode || "",
+            gstn: company.gstin || "",
+            addressLine1: company.address?.addressLine1 || "",
+            addressLine2: company.address?.addressLine2 || "",
+            district: company.address?.district || "",
+            state: company.address?.state || "",
+            pincode: company.address?.pincode || "",
             phone: company.phone || "",
-            alternatePhone: company.alternatePhone || "",
+            alternatePhone: company.alternatePhoneNo || "",
             emailId: company.emailId || "",
-            accountName: company.accountName || "",
-            shortName: company.shortName || "",
-            accountNo: company.accountNo || "",
-            bankName: company.bankName || "",
-            branch: company.branch || "",
-            ifsc: company.ifsc || "",
-            openingBalance: company.openingBalance || "",
-            openingDate: company.openingDate || ""
+            accountName: company.bankAccounts?.[0]?.accountName || "",
+            shortName: company.bankAccounts?.[0]?.shortName || "",
+            accountNo: company.bankAccounts?.[0]?.accountNo || "",
+            bankName: company.bankAccounts?.[0]?.bankName || "",
+            branch: company.bankAccounts?.[0]?.branch || "",
+            ifsc: company.bankAccounts?.[0]?.ifsc || "",
+            openingBalance: company.bankAccounts?.[0]?.openingBalance || "",
+            openingDate: company.bankAccounts?.[0]?.openingDate || "",
+            sites: mappedSites
         });
-        setSites(company.sites || []);
-        setShowSiteForm(company.sites && company.sites.length > 0 ? false : true);
+
+        setShowSiteForm(mappedSites.length > 0 ? false : true);
         setEditingCompanyIndex(index);
         setIsEditingCompany(true);
         setOpenModal(true);
@@ -202,42 +273,80 @@ export default function CompanyPage() {
     };
 
     const filteredCompanies = companies.filter(company =>
-        company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        company.gstn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        company.district.toLowerCase().includes(searchQuery.toLowerCase())
+        (company.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (company.gstin || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (company.address?.district || "").toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     const paginatedCompanies = filteredCompanies.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
-    const handleDeleteCompany = (index) => {
-        setCompanies(companies.filter((_, i) => i !== index));
+    const handleDeleteCompany = async (index) => {
+        const companyId = companies[index].id;
+        if (window.confirm("Are you sure you want to delete this company?")) {
+            try {
+                const response = await adminApi.deleteCompany(companyId);
+                if (response.success) {
+                    setCompanies(companies.filter((_, i) => i !== index));
+                }
+            } catch (error) {
+                console.error("Error deleting company:", error);
+                alert("Failed to delete company: " + (error.response?.data?.message || "Unknown error"));
+            }
+        }
     };
 
-    const handleNext = () => setActiveStep((prev) => prev + 1);
+    const handleNext = async () => {
+        if (activeStep === 0) {
+            const errors = await formik.validateForm();
+            formik.setTouched({
+                name: true, invoiceInitial: true, gstn: true, addressLine1: true,
+                district: true, state: true, pincode: true, phone: true
+            });
+            // If there are errors in step 1 fields, block next
+            const step1Errors = ['name', 'invoiceInitial', 'gstn', 'addressLine1', 'district', 'state', 'pincode', 'phone'].filter(key => errors[key]);
+            if (step1Errors.length > 0) {
+                return;
+            }
+        }
+        setActiveStep((prev) => prev + 1);
+    };
     const handleBack = () => setActiveStep((prev) => prev - 1);
 
     const handleAddSite = () => {
-        if (!currentSite.name) return;
+        if (!currentSite.name || !currentSite.plantType || !currentSite.contactNo || !currentSite.addressLine1 || !currentSite.district || !currentSite.state || !currentSite.pincode) {
+            alert("Please fill in the required fields: Site Name, Plant Type, Contact No, Address Line 1, District, State, and Pincode.");
+            return;
+        }
+        if (!/^[0-9]{10,12}$/.test(currentSite.contactNo)) {
+            alert("Contact No must be 10 to 12 digits.");
+            return;
+        }
+        if (!/^[0-9]{6}$/.test(currentSite.pincode)) {
+            alert("Pincode must be exactly 6 digits.");
+            return;
+        }
+
+        const newSites = [...formik.values.sites];
         if (editingSiteIndex !== null) {
-            const newSites = [...sites];
             newSites[editingSiteIndex] = currentSite;
-            setSites(newSites);
             setEditingSiteIndex(null);
         } else {
-            setSites([...sites, currentSite]);
+            newSites.push(currentSite);
         }
+        formik.setFieldValue("sites", newSites);
         setCurrentSite(initialSiteState);
         setShowSiteForm(false);
     };
 
     const handleEditSite = (index) => {
-        setCurrentSite(sites[index]);
+        setCurrentSite(formik.values.sites[index]);
         setEditingSiteIndex(index);
         setShowSiteForm(true);
     };
 
     const handleDeleteSite = (index) => {
-        setSites(sites.filter((_, i) => i !== index));
+        const newSites = formik.values.sites.filter((_, i) => i !== index);
+        formik.setFieldValue("sites", newSites);
     };
 
     const steps = ["Basic Company Details", "Site Details", "Bank Details"];
@@ -293,20 +402,96 @@ export default function CompanyPage() {
         );
     };
 
-    const renderField = (label, placeholder, isSelect = false, type = "text", value = "", onChange = () => { }) => {
+    const renderField = (name, label, placeholder, isSelect = false, type = "text") => {
+        const value = formik.values[name];
+        const error = formik.touched[name] && formik.errors[name];
+
         if (type === "switch") {
             return (
                 <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
                     <FormControlLabel
                         control={
                             <Switch
+                                name={name}
                                 checked={value}
-                                onChange={(e) => onChange(e.target.checked)}
+                                onChange={formik.handleChange}
                                 sx={{ '& .MuiSwitch-switchBase.Mui-checked': { color: '#0057FF' }, '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#0057FF' } }}
                             />
                         }
                         label={label}
                         sx={{ color: '#6B7280' }}
+                    />
+                </Box>
+            );
+        }
+        return (
+            <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
+                {isSelect ? (
+                    <Select
+                        fullWidth size="small"
+                        name={name}
+                        value={value}
+                        onChange={formik.handleChange}
+                        onBlur={formik.handleBlur}
+                        error={!!error}
+                        displayEmpty
+                        sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                    >
+                        <MenuItem value="">{placeholder}</MenuItem>
+                        {label.includes("Site Type") ? [
+                            <MenuItem key="OFFICE" value="OFFICE">OFFICE</MenuItem>,
+                            <MenuItem key="PRODUCTION" value="PRODUCTION">PRODUCTION</MenuItem>
+                        ] : label.includes("Plant Type") ? [
+                            <MenuItem key="CRUSHER" value="CRUSHER">CRUSHER</MenuItem>,
+                            <MenuItem key="YARD" value="YARD">YARD</MenuItem>,
+                            <MenuItem key="QUARRY" value="QUARRY">QUARRY</MenuItem>,
+                            <MenuItem key="INTEGRATED" value="INTEGRATED">INTEGRATED</MenuItem>
+                        ] : [
+                            <MenuItem key="Option 1" value="Option 1">Option 1</MenuItem>,
+                            <MenuItem key="Option 2" value="Option 2">Option 2</MenuItem>
+                        ]}
+                    </Select>
+                ) : (
+                    <TextField
+                        fullWidth size="small"
+                        name={name}
+                        type={type}
+                        placeholder={placeholder}
+                        variant="outlined"
+                        value={value}
+                        onChange={(e) => {
+                            if (name === 'branch' || name === 'bankName') {
+                                const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                                formik.setFieldValue(name, val);
+                            } else {
+                                formik.handleChange(e);
+                            }
+                        }}
+                        onBlur={formik.handleBlur}
+                        error={!!error}
+                        helperText={error}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
+                    />
+                )}
+            </Box>
+        );
+    };
+
+    // Helper for rendering site form fields (not in formik yet)
+    const renderSiteField = (label, placeholder, isSelect = false, type = "text", value = "", onChange = () => { }) => {
+        if (type === "switch") {
+            return (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+                    <FormControlLabel
+                        control={
+                            <Switch
+                                color="primary"
+                                checked={value}
+                                onChange={(e) => onChange(e.target.checked)}
+                            />
+                        }
+                        label={label}
                     />
                 </Box>
             );
@@ -323,22 +508,28 @@ export default function CompanyPage() {
                         sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
                     >
                         <MenuItem value="">{placeholder}</MenuItem>
-                        <MenuItem value="Option 1">Option 1</MenuItem>
-                        <MenuItem value="Option 2">Option 2</MenuItem>
+                        {label.includes("Site Type") ? [
+                            <MenuItem key="OFFICE" value="OFFICE">OFFICE</MenuItem>,
+                            <MenuItem key="PRODUCTION" value="PRODUCTION">PRODUCTION</MenuItem>
+                        ] : label.includes("Plant Type") ? [
+                            <MenuItem key="CRUSHER" value="CRUSHER">CRUSHER</MenuItem>,
+                            <MenuItem key="YARD" value="YARD">YARD</MenuItem>,
+                            <MenuItem key="QUARRY" value="QUARRY">QUARRY</MenuItem>,
+                            <MenuItem key="INTEGRATED" value="INTEGRATED">INTEGRATED</MenuItem>
+                        ] : null}
                     </Select>
                 ) : (
                     <TextField
                         fullWidth size="small"
                         placeholder={placeholder}
-                        variant="outlined"
                         value={value}
                         onChange={(e) => onChange(e.target.value)}
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB' } }}
                     />
                 )}
             </Box>
         );
-    };
+    }
 
     const renderSuccessStep = () => (
         <Box sx={{
@@ -373,17 +564,17 @@ export default function CompanyPage() {
             case 0:
                 return (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
-                        <Box sx={{ width: itemWidth }}>{renderField("Name", "Enter name", false, "text", formData.name, (v) => setFormData({ ...formData, name: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Invoice Initial", "Enter invoice initial", false, "text", formData.invoiceInitial, (v) => setFormData({ ...formData, invoiceInitial: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("GSTN", "Enter GSTN", false, "text", formData.gstn, (v) => setFormData({ ...formData, gstn: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Address Line 1", "Enter address line 1", false, "text", formData.addressLine1, (v) => setFormData({ ...formData, addressLine1: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Address Line 2", "Enter address line 2", false, "text", formData.addressLine2, (v) => setFormData({ ...formData, addressLine2: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("District", "Choose district", false, "text", formData.district, (v) => setFormData({ ...formData, district: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("State", "Choose state", false, "text", formData.state, (v) => setFormData({ ...formData, state: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Pincode", "Choose pincode", false, "text", formData.pincode, (v) => setFormData({ ...formData, pincode: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Phone", "Enter phone number", false, "text", formData.phone, (v) => setFormData({ ...formData, phone: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Alternate Phone", "Enter alternate phone", false, "text", formData.alternatePhone, (v) => setFormData({ ...formData, alternatePhone: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Email Id", "Enter email id", false, "text", formData.emailId, (v) => setFormData({ ...formData, emailId: v }))}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("name", "Name", "Enter name")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("invoiceInitial", "Invoice Initial", "Enter invoice initial")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("gstn", "GSTN", "Enter GSTN")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("addressLine1", "Address Line 1", "Enter address line 1")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("addressLine2", "Address Line 2", "Enter address line 2")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("district", "District", "Choose district")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("state", "State", "Choose state")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("pincode", "Pincode", "Choose pincode")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("phone", "Phone", "Enter phone number")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("alternatePhone", "Alternate Phone", "Enter alternate phone")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("emailId", "Email Id", "Enter email id")}</Box>
                     </Box>
                 );
             case 1:
@@ -399,19 +590,18 @@ export default function CompanyPage() {
                                     {editingSiteIndex !== null ? "Edit Site Details" : "Enter Site Details"}
                                 </Typography>
                                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Site Name *", "Enter site name", false, "text", currentSite.name, (v) => setCurrentSite({ ...currentSite, name: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Contact Person", "Select contact person", true, "text", currentSite.contactPerson, (v) => setCurrentSite({ ...currentSite, contactPerson: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Address Line 1", "Enter address line 1", false, "text", currentSite.addressLine1, (v) => setCurrentSite({ ...currentSite, addressLine1: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Address Line 2", "Enter address line 2", false, "text", currentSite.addressLine2, (v) => setCurrentSite({ ...currentSite, addressLine2: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("State", "Enter state", false, "text", currentSite.state, (v) => setCurrentSite({ ...currentSite, state: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("District", "Enter district", false, "text", currentSite.district, (v) => setCurrentSite({ ...currentSite, district: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Pincode", "Enter pincode", false, "text", currentSite.pincode, (v) => setCurrentSite({ ...currentSite, pincode: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Contact No", "Enter contact no", false, "text", currentSite.contactNo, (v) => setCurrentSite({ ...currentSite, contactNo: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Alternate No", "Enter alternate no", false, "text", currentSite.alternateNo, (v) => setCurrentSite({ ...currentSite, alternateNo: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Site Type", "Select site type", true, "text", currentSite.siteType, (v) => setCurrentSite({ ...currentSite, siteType: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Plant Type *", "Select plant type", true, "text", currentSite.plantType, (v) => setCurrentSite({ ...currentSite, plantType: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Site Name *", "Enter site name", false, "text", currentSite.name, (v) => setCurrentSite({ ...currentSite, name: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Address Line 1", "Enter address line 1", false, "text", currentSite.addressLine1, (v) => setCurrentSite({ ...currentSite, addressLine1: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Address Line 2", "Enter address line 2", false, "text", currentSite.addressLine2, (v) => setCurrentSite({ ...currentSite, addressLine2: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("State", "Enter state", false, "text", currentSite.state, (v) => setCurrentSite({ ...currentSite, state: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("District", "Enter district", false, "text", currentSite.district, (v) => setCurrentSite({ ...currentSite, district: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Pincode", "Enter pincode", false, "text", currentSite.pincode, (v) => setCurrentSite({ ...currentSite, pincode: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Contact No", "Enter contact no", false, "text", currentSite.contactNo, (v) => setCurrentSite({ ...currentSite, contactNo: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Alternate No", "Enter alternate no", false, "text", currentSite.alternateNo, (v) => setCurrentSite({ ...currentSite, alternateNo: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Site Type", "Select site type", true, "text", currentSite.siteType, (v) => setCurrentSite({ ...currentSite, siteType: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Plant Type *", "Select plant type", true, "text", currentSite.plantType, (v) => setCurrentSite({ ...currentSite, plantType: v }))}</Box>
                                     <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', pb: 1 }}>
-                                        {renderField("Active", "", false, "switch", currentSite.active, (v) => setCurrentSite({ ...currentSite, active: v }))}
+                                        {renderSiteField("Active", "", false, "switch", currentSite.active, (v) => setCurrentSite({ ...currentSite, active: v }))}
                                     </Box>
                                     <Box sx={{ width: '100%', display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 1 }}>
                                         <Button
@@ -431,24 +621,25 @@ export default function CompanyPage() {
                                     </Box>
                                 </Box>
                             </Box>
-                        ) : null}
+                        ) : (
+                            <Box sx={{ display: 'flex', justifyContent: formik.values.sites.length > 0 ? 'flex-end' : 'center', mb: 3 }}>
+                                <Button
+                                    startIcon={<AddIcon />}
+                                    variant="contained"
+                                    onClick={() => { setShowSiteForm(true); setEditingSiteIndex(null); setCurrentSite(initialSiteState); }}
+                                    sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 600, backgroundColor: '#0057FF', fontSize: '13px', px: 4, py: 1.5 }}
+                                >
+                                    Add New Site
+                                </Button>
+                            </Box>
+                        )}
 
-                        {sites.length > 0 && (
+                        {formik.values.sites.length > 0 && (
                             <Box>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                                     <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#111827' }}>
-                                        Registered Sites ({sites.length})
+                                        Registered Sites ({formik.values.sites.length})
                                     </Typography>
-                                    {!showSiteForm && (
-                                        <Button
-                                            startIcon={<AddIcon />}
-                                            variant="contained"
-                                            onClick={() => { setShowSiteForm(true); setEditingSiteIndex(null); setCurrentSite(initialSiteState); }}
-                                            sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 600, backgroundColor: '#0057FF', fontSize: '13px' }}
-                                        >
-                                            Add New Site
-                                        </Button>
-                                    )}
                                 </Box>
                                 <TableContainer sx={{ border: '1px solid #F3F4F6', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#FFFFFF' }}>
                                     <Table size="small">
@@ -462,7 +653,7 @@ export default function CompanyPage() {
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
-                                            {sites.map((site, index) => (
+                                            {formik.values.sites.map((site, index) => (
                                                 <TableRow key={index} sx={{ '&:hover': { backgroundColor: '#F9FAFB' } }}>
                                                     <TableCell sx={{ color: '#111827', fontWeight: 500 }}>{site.name}</TableCell>
                                                     <TableCell sx={{ color: '#4B5563' }}>{site.contactNo}</TableCell>
@@ -497,14 +688,14 @@ export default function CompanyPage() {
             case 2:
                 return (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
-                        <Box sx={{ width: itemWidth }}>{renderField("Account Name", "Enter account name", false, "text", formData.accountName, (v) => setFormData({ ...formData, accountName: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Short Name", "Enter short name", false, "text", formData.shortName, (v) => setFormData({ ...formData, shortName: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Account No", "Enter account no", false, "text", formData.accountNo, (v) => setFormData({ ...formData, accountNo: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Bank Name", "Enter bank name", false, "text", formData.bankName, (v) => setFormData({ ...formData, bankName: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Branch", "Enter branch", false, "text", formData.branch, (v) => setFormData({ ...formData, branch: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("IFSC", "Enter IFSC", false, "text", formData.ifsc, (v) => setFormData({ ...formData, ifsc: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Opening Balance", "Enter opening balance", false, "text", formData.openingBalance, (v) => setFormData({ ...formData, openingBalance: v }))}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Opening Date", "dd-mm-yyyy", false, "text", formData.openingDate, (v) => setFormData({ ...formData, openingDate: v }))}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("accountName", "Account Name", "Enter account name")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("shortName", "Short Name", "Enter short name")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("accountNo", "Account No", "Enter account no")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("bankName", "Bank Name", "Enter bank name")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("branch", "Branch", "Enter branch")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("ifsc", "IFSC", "Enter IFSC")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("openingBalance", "Opening Balance", "Enter opening balance")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("openingDate", "Opening Date", "dd-mm-yyyy", false, "date")}</Box>
                     </Box>
                 );
             default: return null;
@@ -603,17 +794,17 @@ export default function CompanyPage() {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {paginatedCompanies.map((company) => (
+                            {paginatedCompanies.map((company, index) => (
                                 <TableRow key={company.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
-                                    <TableCell>{company.id}</TableCell>
+                                    <TableCell>{`SW${String(page * rowsPerPage + index + 1).padStart(3, "0")}`}</TableCell>
                                     <TableCell>{company.name}</TableCell>
                                     <TableCell>{company.invoiceInitial}</TableCell>
-                                    <TableCell>{company.gstn}</TableCell>
-                                    <TableCell>{company.addressLine1}</TableCell>
-                                    <TableCell>{company.addressLine2}</TableCell>
-                                    <TableCell>{company.district}</TableCell>
-                                    <TableCell>{company.state}</TableCell>
-                                    <TableCell>{company.pincode}</TableCell>
+                                    <TableCell>{company.gstin}</TableCell>
+                                    <TableCell>{company.address?.addressLine1}</TableCell>
+                                    <TableCell>{company.address?.addressLine2}</TableCell>
+                                    <TableCell>{company.address?.district}</TableCell>
+                                    <TableCell>{company.address?.state}</TableCell>
+                                    <TableCell>{company.address?.pincode}</TableCell>
                                     <TableCell>{company.phone}</TableCell>
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
@@ -720,8 +911,8 @@ export default function CompanyPage() {
                                 )}
                                 <Button
                                     variant="contained"
-                                    onClick={activeStep < 2 ? handleNext : handleSubmit}
-                                    disabled={activeStep === 1 && showSiteForm && sites.length === 0}
+                                    onClick={activeStep < 2 ? handleNext : formik.handleSubmit}
+                                    disabled={activeStep === 1 && showSiteForm && formik.values.sites.length === 0}
                                     sx={{
                                         backgroundColor: '#2D3FE2',
                                         borderRadius: '12px',
