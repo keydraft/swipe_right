@@ -5,7 +5,7 @@ import {
     Box, Typography, Card, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
-    Select, MenuItem, Switch, FormControlLabel
+    Select, MenuItem, Switch, FormControlLabel, TablePagination
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, FileDownloadOutlined as DownloadIcon,
@@ -62,6 +62,8 @@ export default function CompanyPage() {
 
     const [companies, setCompanies] = useState(mockCompanies);
     const [isInitialized, setIsInitialized] = useState(false);
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
 
     // Persist data in localStorage
     useEffect(() => {
@@ -153,7 +155,7 @@ export default function CompanyPage() {
             };
             setCompanies([...companies, newCompany]);
         }
-        
+
         setShowSuccess(true);
         setTimeout(() => {
             handleCloseModal();
@@ -189,6 +191,23 @@ export default function CompanyPage() {
         setIsEditingCompany(true);
         setOpenModal(true);
     };
+
+    const handleChangePage = (event, newPage) => {
+        setPage(newPage);
+    };
+
+    const handleChangeRowsPerPage = (event) => {
+        setRowsPerPage(parseInt(event.target.value, 10));
+        setPage(0);
+    };
+
+    const filteredCompanies = companies.filter(company =>
+        company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        company.gstn.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        company.district.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const paginatedCompanies = filteredCompanies.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
     const handleDeleteCompany = (index) => {
         setCompanies(companies.filter((_, i) => i !== index));
@@ -579,12 +598,12 @@ export default function CompanyPage() {
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>State</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Pincode</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Phone No</TableCell>
-                                <TableCell align="center" sx={{ fontWeight: 600, color: palette.text.primary }}>View</TableCell>
+                                {/* <TableCell align="center" sx={{ fontWeight: 600, color: palette.text.primary }}>View</TableCell> */}
                                 <TableCell align="center" sx={{ fontWeight: 600, color: palette.text.primary }}>Action</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {companies.map((company) => (
+                            {paginatedCompanies.map((company) => (
                                 <TableRow key={company.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
                                     <TableCell>{company.id}</TableCell>
                                     <TableCell>{company.name}</TableCell>
@@ -628,6 +647,22 @@ export default function CompanyPage() {
                         </TableBody>
                     </Table>
                 </TableContainer>
+                <TablePagination
+                    rowsPerPageOptions={[5, 10, 25]}
+                    component="div"
+                    count={filteredCompanies.length}
+                    rowsPerPage={rowsPerPage}
+                    page={page}
+                    onPageChange={handleChangePage}
+                    onRowsPerPageChange={handleChangeRowsPerPage}
+                    sx={{
+                        borderTop: `1px solid ${palette.divider}`,
+                        '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': {
+                            fontSize: '13px',
+                            color: palette.text.secondary
+                        }
+                    }}
+                />
             </Card>
 
             {/* Modal for New Company */}

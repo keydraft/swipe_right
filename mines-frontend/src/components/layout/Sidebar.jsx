@@ -46,6 +46,7 @@ export default function Sidebar() {
                 { text: "Transport", path: "/dashboard/master/transport" },
                 { text: "Customer", path: "/dashboard/master/customer" },
                 { text: "Company", path: "/dashboard/master/company" },
+                { text: "Products", path: "/dashboard/master/product" },
             ],
         },
         { text: "POS", icon: <SignalCellularAltRounded />, path: "/dashboard/pos" },
