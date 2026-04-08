@@ -50,6 +50,7 @@ export default function Sidebar() {
                 { text: "Company", path: "/dashboard/master/company", action: 'read', subject: 'Company' },
                 { text: "Employee", path: "/dashboard/master/employee", action: 'read', subject: 'Employee' },
                 { text: "Customer", path: "/dashboard/master/customer", action: 'read', subject: 'Customer' },
+                { text: "Transporter", path: "/dashboard/master/transporter", action: 'read', subject: 'Transporter' },
                 { text: "Product", path: "/dashboard/master/product", action: 'read', subject: 'Product' },
                 { text: "Truck", path: "/dashboard/master/truck", action: 'read', subject: 'Truck' },
             ],

@@ -1,10 +1,13 @@
 package com.keydraft.mines.controller;
 
 import com.keydraft.mines.dto.ApiResponse;
+import com.keydraft.mines.dto.PaginatedResponse;
 import com.keydraft.mines.dto.ProductRequest;
 import com.keydraft.mines.dto.ProductResponse;
 import com.keydraft.mines.service.ProductService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,8 +31,10 @@ public class ProductController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<ProductResponse>>> getAllProducts() {
-        List<ProductResponse> products = productService.getAllProducts();
+    public ResponseEntity<ApiResponse<PaginatedResponse<ProductResponse>>> getAllProducts(
+            @RequestParam(required = false) String search,
+            @PageableDefault(size = 10) Pageable pageable) {
+        PaginatedResponse<ProductResponse> products = productService.getAllProducts(search, pageable);
         return ResponseEntity.ok(ApiResponse.success(products, "Products fetched successfully"));
     }
 

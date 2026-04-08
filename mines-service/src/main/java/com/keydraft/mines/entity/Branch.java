@@ -34,8 +34,7 @@ public class Branch extends BaseEntity {
     private String alternatePhoneNo;
     private String emailId;
 
-    @OneToOne(cascade = CascadeType.ALL)
-    @JoinColumn(name = "address_id", referencedColumnName = "id")
+    @Embedded
     private Address address;
 
     @ManyToOne(fetch = FetchType.LAZY)

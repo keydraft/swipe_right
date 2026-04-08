@@ -12,6 +12,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -44,7 +48,6 @@ public class AdminService {
     private AddressResponse mapAddressResponse(Address address) {
         if (address == null) return null;
         return AddressResponse.builder()
-                .id(address.getId())
                 .addressLine1(address.getAddressLine1())
                 .addressLine2(address.getAddressLine2())
                 .district(address.getDistrict())
@@ -251,6 +254,35 @@ public class AdminService {
     public List<CompanyResponse> getCompaniesForUser(User user) {
         if (user.getRole().getName().equals("ADMIN")) return companyRepository.findAll().stream().map(this::mapCompanyResponse).collect(Collectors.toList());
         return userCompanyRepository.findByUser(user).stream().map(UserCompany::getCompany).distinct().map(this::mapCompanyResponse).collect(Collectors.toList());
+    }
+
+    public PaginatedResponse<CompanyResponse> getAllCompanies(String search, Pageable pageable) {
+        Specification<Company> spec = (root, query, cb) -> {
+            if (search == null || search.isEmpty()) {
+                return cb.conjunction();
+            }
+            String pattern = "%" + search.toLowerCase() + "%";
+            return cb.or(
+                    cb.like(cb.lower(root.get("name")), pattern),
+                    cb.like(cb.lower(root.get("gstin")), pattern),
+                    cb.like(cb.lower(root.get("emailId")), pattern),
+                    cb.like(cb.lower(root.get("phone")), pattern)
+            );
+        };
+
+        Page<Company> page = companyRepository.findAll(spec, pageable);
+        List<CompanyResponse> content = page.getContent().stream()
+                .map(this::mapCompanyResponse)
+                .collect(Collectors.toList());
+
+        return PaginatedResponse.<CompanyResponse>builder()
+                .content(content)
+                .pageNumber(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
     }
 
     public List<UserResponse> getAllUsers() { return userRepository.findAll().stream().map(this::mapUserResponse).collect(Collectors.toList()); }

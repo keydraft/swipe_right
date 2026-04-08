@@ -5,7 +5,7 @@ import {
     Box, Typography, Card, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
-    Select, MenuItem, CircularProgress, Grid, Divider, TablePagination
+    CircularProgress, Grid, Divider, TablePagination
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, 
@@ -14,16 +14,14 @@ import {
     PrintOutlined as PrintIcon, SortOutlined as SortIcon
 } from "@mui/icons-material";
 import { palette } from "@/theme";
-import { truckApi, transporterApi, customerApi } from "@/services/api";
+import { transporterApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 
-export default function TruckPage() {
+export default function TransporterPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
-    const [trucks, setTrucks] = useState([]);
     const [transporters, setTransporters] = useState([]);
-    const [customers, setCustomers] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState(null);
@@ -34,45 +32,24 @@ export default function TruckPage() {
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [totalElements, setTotalElements] = useState(0);
 
-    const fetchInitialData = async () => {
+    const fetchTransporters = async () => {
         setIsLoading(true);
         try {
-            // Fetch dropdown data (non-paginated or large limit)
-            const [transResp, custResp] = await Promise.all([
-                transporterApi.getAll(0, 1000),
-                customerApi.getAll(0, 1000)
-            ]);
-
-            if (transResp.success) setTransporters(transResp.data.content || []);
-            if (custResp.success) setCustomers(custResp.data.content || []);
-            
-            await fetchTrucks();
+            const response = await transporterApi.getAll(page, rowsPerPage, searchQuery);
+            if (response.success) {
+                setTransporters(response.data.content);
+                setTotalElements(response.data.totalElements);
+            }
         } catch (error) {
-            console.error("Error fetching initial data:", error);
+            console.error("Error fetching transporters:", error);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const fetchTrucks = async () => {
-        try {
-            const response = await truckApi.getAll(page, rowsPerPage, searchQuery);
-            if (response.success) {
-                setTrucks(response.data.content);
-                setTotalElements(response.data.totalElements);
-            }
-        } catch (error) {
-            console.error("Error fetching trucks:", error);
-        }
-    };
-
-    useEffect(() => {
-        fetchInitialData();
-    }, []);
-
     useEffect(() => {
         const timer = setTimeout(() => {
-            fetchTrucks();
+            fetchTransporters();
         }, 300);
         return () => clearTimeout(timer);
     }, [page, rowsPerPage, searchQuery]);
@@ -86,47 +63,39 @@ export default function TruckPage() {
         setPage(0);
     };
 
-    const truckValidationSchema = Yup.object({
-        truckNo: Yup.string().required("Truck number is required"),
-        ownershipType: Yup.string().required("Ownership type is required"),
-        tareWeight: Yup.number().typeError("Must be a number").required("Tare weight is required"),
+    const transporterValidationSchema = Yup.object({
+        name: Yup.string().required("Transporter name is required"),
+        iCode: Yup.string().required("Identification code is required"),
+        phone: Yup.string().required("Phone number is required"),
     });
 
     const formik = useFormik({
         initialValues: {
-            truckNo: "",
-            ownershipType: "OWN",
-            ownerName: "",
-            transporterId: "",
-            customerId: "",
-            make: "",
-            model: "",
-            engineNo: "",
-            chassisNo: "",
-            tareWeight: "",
-            usageType: "",
-            fuelType: ""
+            name: "",
+            iCode: "",
+            gstin: "",
+            phone: "",
+            address: {
+                addressLine1: "",
+                addressLine2: "",
+                district: "",
+                state: "",
+                pincode: ""
+            }
         },
-        validationSchema: truckValidationSchema,
+        validationSchema: transporterValidationSchema,
         onSubmit: async (values) => {
             try {
-                const payload = {
-                    ...values,
-                    transporterId: values.ownershipType === "TRANSPORTER" ? values.transporterId : null,
-                    customerId: values.ownershipType === "CUSTOMER" ? values.customerId : null,
-                    tareWeight: parseFloat(values.tareWeight) || 0
-                };
-
-                const response = await truckApi.upsert(payload, editingId);
+                const response = await transporterApi.upsert(values, editingId);
                 if (response.success) {
                     setShowSuccess(true);
                     setTimeout(() => {
                         handleCloseModal();
-                        fetchTrucks();
+                        fetchTransporters();
                     }, 2000);
                 }
             } catch (error) {
-                console.error("Error saving truck:", error);
+                console.error("Error saving transporter:", error);
             }
         },
     });
@@ -139,36 +108,35 @@ export default function TruckPage() {
         setShowSuccess(false);
     };
 
-    const handleEditTruck = (truck) => {
+    const handleEditTransporter = (transporter) => {
         setIsEditing(true);
-        setEditingId(truck.id);
+        setEditingId(transporter.id);
         formik.setValues({
-            truckNo: truck.truckNo || "",
-            ownershipType: truck.ownershipType || "OWN",
-            ownerName: truck.ownerName || "",
-            transporterId: truck.transporterId || "",
-            customerId: truck.customerId || "",
-            make: truck.make || "",
-            model: truck.model || "",
-            engineNo: truck.engineNo || "",
-            chassisNo: truck.chassisNo || "",
-            tareWeight: truck.tareWeight || "",
-            usageType: truck.usageType || "",
-            fuelType: truck.fuelType || ""
+            name: transporter.name || "",
+            iCode: transporter.iCode || "",
+            gstin: transporter.gstin || "",
+            phone: transporter.phone || "",
+            address: transporter.address || {
+                addressLine1: "",
+                addressLine2: "",
+                district: "",
+                state: "",
+                pincode: ""
+            }
         });
         setOpenModal(true);
         setShowSuccess(false);
     };
 
-    const handleDeleteTruck = async (id) => {
-        if (window.confirm("Are you sure you want to delete this truck?")) {
+    const handleDeleteTransporter = async (id) => {
+        if (window.confirm("Are you sure you want to delete this transporter?")) {
             try {
-                const response = await truckApi.delete(id);
+                const response = await transporterApi.delete(id);
                 if (response.success) {
-                    fetchTrucks();
+                    fetchTransporters();
                 }
             } catch (error) {
-                console.error("Error deleting truck:", error);
+                console.error("Error deleting transporter:", error);
             }
         }
     };
@@ -178,56 +146,38 @@ export default function TruckPage() {
         formik.resetForm();
     };
 
-    const renderField = (label, placeholder, isSelect = false, type = "text", field = "", options = []) => {
-        const value = formik.values[field] || "";
-        const error = formik.touched[field] && formik.errors[field];
+    const renderField = (label, placeholder, type = "text", field = "") => {
+        const fieldKeys = field.split('.');
+        let value = formik.values;
+        for (const key of fieldKeys) value = value?.[key];
+        
+        const error = fieldKeys.length > 1 
+            ? formik.touched[fieldKeys[0]]?.[fieldKeys[1]] && formik.errors[fieldKeys[0]]?.[fieldKeys[1]]
+            : formik.touched[field] && formik.errors[field];
 
         return (
             <Box sx={{ width: '100%' }}>
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
-                {isSelect ? (
-                    <Select
-                        fullWidth size="small"
-                        name={field}
-                        value={value}
-                        onChange={(e) => {
+                <TextField
+                    fullWidth
+                    size="small"
+                    name={field}
+                    type={type}
+                    placeholder={placeholder}
+                    variant="outlined"
+                    value={value || ""}
+                    onChange={(e) => {
+                        if (field === "iCode" || field === "gstin") {
+                            formik.setFieldValue(field, e.target.value.toUpperCase());
+                        } else {
                             formik.handleChange(e);
-                            if (field === "ownershipType") {
-                                formik.setFieldValue("transporterId", "");
-                                formik.setFieldValue("customerId", "");
-                            }
-                        }}
-                        onBlur={formik.handleBlur}
-                        error={!!error}
-                        displayEmpty
-                        sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
-                    >
-                        <MenuItem value="">{placeholder}</MenuItem>
-                        {options.map((opt, i) => (
-                            <MenuItem key={i} value={opt.value}>{opt.label}</MenuItem>
-                        ))}
-                    </Select>
-                ) : (
-                    <TextField
-                        fullWidth size="small"
-                        name={field}
-                        type={type}
-                        placeholder={placeholder}
-                        variant="outlined"
-                        value={value}
-                        onChange={(e) => {
-                            if (field === "truckNo") {
-                                formik.setFieldValue(field, e.target.value.toUpperCase());
-                            } else {
-                                formik.handleChange(e);
-                            }
-                        }}
-                        onBlur={formik.handleBlur}
-                        error={!!error}
-                        helperText={error}
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
-                    />
-                )}
+                        }
+                    }}
+                    onBlur={formik.handleBlur}
+                    error={!!error}
+                    helperText={error}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
+                />
             </Box>
         );
     };
@@ -237,7 +187,7 @@ export default function TruckPage() {
             {/* Header Section */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h3" sx={{ fontWeight: 900, color: palette.text.secondary }}>
-                    Truck Management
+                    Transporter
                 </Typography>
                 <Button
                     variant="contained"
@@ -251,7 +201,7 @@ export default function TruckPage() {
                         borderRadius: '4px'
                     }}
                 >
-                    New Truck
+                    New Transporter
                 </Button>
             </Box>
 
@@ -259,7 +209,7 @@ export default function TruckPage() {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                 <TextField
                     variant="outlined"
-                    placeholder="Search trucks..."
+                    placeholder="Search transporters..."
                     value={searchQuery}
                     onChange={(e) => {
                         setSearchQuery(e.target.value);
@@ -310,52 +260,46 @@ export default function TruckPage() {
                     <Table>
                         <TableHead sx={{ backgroundColor: palette.background.paper }}>
                             <TableRow>
-                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Truck No</TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Type</TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Owner/Partner</TableCell>
-                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Tare Weight</TableCell>
+                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>ID / Code</TableCell>
+                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Name</TableCell>
+                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Phone</TableCell>
+                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>GSTIN</TableCell>
+                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>City / District</TableCell>
                                 <TableCell align="center" sx={{ fontWeight: 600, color: palette.text.primary }}>Action</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
                             {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
                                         <CircularProgress size={24} />
                                     </TableCell>
                                 </TableRow>
-                            ) : trucks.length === 0 ? (
+                            ) : transporters.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
-                                        <Typography color="textSecondary">No trucks found</Typography>
+                                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                                        <Typography color="textSecondary">No transporters found</Typography>
                                     </TableCell>
                                 </TableRow>
-                            ) : trucks.map((t) => (
+                            ) : transporters.map((t) => (
                                 <TableRow key={t.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
-                                    <TableCell sx={{ fontWeight: 600, color: '#0057FF' }}>{t.truckNo}</TableCell>
-                                    <TableCell>
-                                        <Box sx={{
-                                            display: 'inline-block', px: 1.5, py: 0.5, borderRadius: '12px',
-                                            fontSize: '11px', fontWeight: 800,
-                                            backgroundColor: t.ownershipType === 'OWN' ? '#EBF5FF' : t.ownershipType === 'TRANSPORTER' ? '#F0FDF4' : '#FFF7ED',
-                                            color: t.ownershipType === 'OWN' ? '#0057FF' : t.ownershipType === 'TRANSPORTER' ? '#16A34A' : '#EA580C'
-                                        }}>
-                                            {t.ownershipType}
-                                        </Box>
-                                    </TableCell>
-                                    <TableCell>
-                                        {t.ownershipType === 'OWN' ? (t.ownerName || 'Company') :
-                                         t.ownershipType === 'TRANSPORTER' ? t.transporterName :
-                                         t.customerName}
-                                    </TableCell>
-                                    <TableCell>{t.tareWeight} kg</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, color: '#0057FF' }}>{t.iCode}</TableCell>
+                                    <TableCell sx={{ fontWeight: 500 }}>{t.name}</TableCell>
+                                    <TableCell>{t.phone}</TableCell>
+                                    <TableCell>{t.gstin || '-'}</TableCell>
+                                    <TableCell>{t.address?.district || '-'}</TableCell>
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                                            <Tooltip title="View">
+                                                <IconButton size="small" sx={{ color: palette.primary.main }}>
+                                                    <ViewIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
                                             <Tooltip title="Edit">
                                                 <IconButton
                                                     size="small"
+                                                    onClick={() => handleEditTransporter(t)}
                                                     sx={{ color: '#0057FF' }}
-                                                    onClick={() => handleEditTruck(t)}
                                                 >
                                                     <EditIcon fontSize="small" />
                                                 </IconButton>
@@ -363,8 +307,8 @@ export default function TruckPage() {
                                             <Tooltip title="Delete">
                                                 <IconButton
                                                     size="small"
+                                                    onClick={() => handleDeleteTransporter(t.id)}
                                                     sx={{ color: '#EF4444' }}
-                                                    onClick={() => handleDeleteTruck(t.id)}
                                                 >
                                                     <DeleteIcon fontSize="small" />
                                                 </IconButton>
@@ -447,72 +391,48 @@ export default function TruckPage() {
                                 minHeight: '260px'
                             }}>
                                 <Typography variant="h3" sx={{ fontWeight: 800, mb: 1, fontSize: '32px' }}>
-                                    Truck Registered
+                                    Transporter Processed
                                 </Typography>
                                 <Typography variant="body1" sx={{ opacity: 0.9 }}>
-                                    The truck record has been saved successfully
+                                    The transporter record has been saved successfully
                                 </Typography>
                             </Box>
                         ) : (
                             <Box>
                                 <Typography variant="h4" sx={{ fontWeight: 900, mb: 3 }}>
-                                    {isEditing ? "Edit Truck" : "New Truck Registry"}
+                                    {isEditing ? "Edit Transporter" : "New Transporter"}
                                 </Typography>
                                 <form onSubmit={formik.handleSubmit}>
                                     <Grid container spacing={3}>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Truck Number", "Enter truck number", false, "text", "truckNo")}
+                                            {renderField("Identification Code (I-Code)", "Enter code", "text", "iCode")}
                                         </Grid>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Ownership Type", "Select type", true, "text", "ownershipType", [
-                                                { label: "Owned", value: "OWN" },
-                                                { label: "Transporter", value: "TRANSPORTER" },
-                                                { label: "Customer", value: "CUSTOMER" }
-                                            ])}
-                                        </Grid>
-
-                                        {formik.values.ownershipType === "TRANSPORTER" && (
-                                            <Grid item xs={12}>
-                                                {renderField("Select Transporter", "Choose transporter", true, "text", "transporterId", 
-                                                    transporters.map(tr => ({ label: `${tr.name} (${tr.iCode})`, value: tr.id }))
-                                                )}
-                                            </Grid>
-                                        )}
-
-                                        {formik.values.ownershipType === "CUSTOMER" && (
-                                            <Grid item xs={12}>
-                                                {renderField("Select Customer", "Choose customer", true, "text", "customerId", 
-                                                    customers.map(cu => ({ label: cu.name, value: cu.id }))
-                                                )}
-                                            </Grid>
-                                        )}
-
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("Owner Name (optional)", "Enter owner name", false, "text", "ownerName")}
+                                            {renderField("Transporter Name", "Enter name", "text", "name")}
                                         </Grid>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Tare Weight (kg)", "Enter weight", false, "number", "tareWeight")}
+                                            {renderField("Phone Number", "Enter phone", "text", "phone")}
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            {renderField("GSTIN", "Enter GSTIN", "text", "gstin")}
                                         </Grid>
 
                                         <Grid item xs={12} sx={{ mt: 1 }}>
                                             <Divider />
-                                            <Typography sx={{ fontWeight: 700, mt: 2, mb: 1, fontSize: '15px' }}>Technical Details</Typography>
+                                            <Typography sx={{ fontWeight: 700, mt: 2, mb: 1, fontSize: '15px' }}>Address Details</Typography>
                                         </Grid>
 
-                                        <Grid item xs={12} md={4}>
-                                            {renderField("Make", "Enter make", false, "text", "make")}
-                                        </Grid>
-                                        <Grid item xs={12} md={4}>
-                                            {renderField("Model", "Enter model", false, "text", "model")}
-                                        </Grid>
-                                        <Grid item xs={12} md={4}>
-                                            {renderField("Fuel Type", "Enter fuel", false, "text", "fuelType")}
+                                        <Grid item xs={12}>
+                                            {renderField("Address Line 1", "Enter address", "text", "address.addressLine1")}
                                         </Grid>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Engine No", "Enter engine no", false, "text", "engineNo")}
+                                            {renderField("District", "Enter district", "text", "address.district")}
                                         </Grid>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Chassis No", "Enter chassis no", false, "text", "chassisNo")}
+                                            {renderField("State", "Enter state", "text", "address.state")}
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            {renderField("Pincode", "Enter pincode", "text", "address.pincode")}
                                         </Grid>
 
                                         <Grid item xs={12} sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
@@ -533,7 +453,7 @@ export default function TruckPage() {
                                                     textTransform: 'none'
                                                 }}
                                             >
-                                                {isEditing ? "Update Truck" : "Register Truck"}
+                                                {isEditing ? "Update Transporter" : "Save Transporter"}
                                             </Button>
                                         </Grid>
                                     </Grid>

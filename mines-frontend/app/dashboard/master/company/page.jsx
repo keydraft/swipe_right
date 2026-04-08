@@ -5,7 +5,8 @@ import {
     Box, Typography, Card, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
-    Select, MenuItem, Switch, FormControlLabel, TablePagination
+    Select, MenuItem, Switch, FormControlLabel, TablePagination,
+    CircularProgress, Grid, Divider
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, FileDownloadOutlined as DownloadIcon,
@@ -27,33 +28,41 @@ export default function CompanyPage() {
  
     const [companies, setCompanies] = useState([]);
     const [isInitialized, setIsInitialized] = useState(false);
+    
+    // Pagination State
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [totalElements, setTotalElements] = useState(0);
+    const [isLoading, setIsLoading] = useState(true);
 
-    // Fetch data from backend
-    useEffect(() => {
-        const fetchCompanies = async () => {
-            try {
-                const response = await adminApi.getCompanies();
-                if (response.success) {
-                    setCompanies(response.data);
-                }
-            } catch (error) {
-                console.error("Error fetching companies:", error);
-                // Fallback to localStorage if backend fails (optional, but good for dev)
-                const savedCompanies = localStorage.getItem("companies");
-                if (savedCompanies) setCompanies(JSON.parse(savedCompanies));
+    const fetchCompanies = async () => {
+        setIsLoading(true);
+        try {
+            const response = await adminApi.getCompanies(page, rowsPerPage, searchQuery);
+            if (response.success) {
+                setCompanies(response.data.content);
+                setTotalElements(response.data.totalElements);
             }
-            setIsInitialized(true);
-        };
+        } catch (error) {
+            console.error("Error fetching companies:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Initial fetch
+    useEffect(() => {
         fetchCompanies();
+        setIsInitialized(true);
     }, []);
 
+    // Fetch on page/search change
     useEffect(() => {
-        if (typeof window !== "undefined" && isInitialized && companies.length > 0) {
-            localStorage.setItem("companies", JSON.stringify(companies));
-        }
-    }, [companies, isInitialized]);
+        const timer = setTimeout(() => {
+            fetchCompanies();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [page, rowsPerPage, searchQuery]);
 
     const initialBranchState = {
         name: "", contactPerson: "", addressLine1: "", addressLine2: "",
@@ -136,10 +145,11 @@ export default function CompanyPage() {
             try {
                 const response = await adminApi.upsertCompany(payload);
                 if (response.success) {
-                    const listResp = await adminApi.getCompanies();
-                    setCompanies(listResp.data);
                     setShowSuccess(true);
-                    setTimeout(() => handleCloseModal(), 2000);
+                    setTimeout(() => {
+                        handleCloseModal();
+                        fetchCompanies();
+                    }, 2000);
                 }
             } catch (error) {
                 console.error("Error saving company:", error);
@@ -871,7 +881,10 @@ export default function CompanyPage() {
                     variant="outlined"
                     placeholder="Search companies..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setPage(0);
+                    }}
                     InputProps={{
                         startAdornment: (
                             <InputAdornment position="start">
@@ -927,12 +940,23 @@ export default function CompanyPage() {
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>State</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Pincode</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Phone No</TableCell>
-                                {/* <TableCell align="center" sx={{ fontWeight: 600, color: palette.text.primary }}>View</TableCell> */}
                                 <TableCell align="center" sx={{ fontWeight: 600, color: palette.text.primary }}>Action</TableCell>
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {paginatedCompanies.map((company, index) => (
+                            {isLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={11} align="center" sx={{ py: 3 }}>
+                                        <CircularProgress size={24} />
+                                    </TableCell>
+                                </TableRow>
+                            ) : companies.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={11} align="center" sx={{ py: 3 }}>
+                                        <Typography color="textSecondary">No companies found</Typography>
+                                    </TableCell>
+                                </TableRow>
+                            ) : companies.map((company, index) => (
                                 <TableRow key={company.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
                                     <TableCell>{`SW${String(page * rowsPerPage + index + 1).padStart(3, "0")}`}</TableCell>
                                     <TableCell>{company.name}</TableCell>
@@ -954,7 +978,7 @@ export default function CompanyPage() {
                                             <Tooltip title="Edit">
                                                 <IconButton
                                                     size="small"
-                                                    onClick={() => handleEditCompany(companies.indexOf(company))}
+                                                    onClick={() => handleEditCompany(index)}
                                                     sx={{ color: '#0057FF' }}
                                                 >
                                                     <EditIcon fontSize="small" />
@@ -963,7 +987,7 @@ export default function CompanyPage() {
                                             <Tooltip title="Delete">
                                                 <IconButton
                                                     size="small"
-                                                    onClick={() => handleDeleteCompany(companies.indexOf(company))}
+                                                    onClick={() => handleDeleteCompany(index)}
                                                     sx={{ color: '#EF4444' }}
                                                 >
                                                     <DeleteIcon fontSize="small" />
@@ -979,7 +1003,7 @@ export default function CompanyPage() {
                 <TablePagination
                     rowsPerPageOptions={[5, 10, 25]}
                     component="div"
-                    count={filteredCompanies.length}
+                    count={totalElements}
                     rowsPerPage={rowsPerPage}
                     page={page}
                     onPageChange={handleChangePage}

@@ -4,14 +4,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.keydraft.mines.dto.ApiResponse;
 import com.keydraft.mines.dto.EmployeeRequest;
 import com.keydraft.mines.dto.EmployeeResponse;
+import com.keydraft.mines.dto.PaginatedResponse;
 import com.keydraft.mines.service.EmployeeService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -41,8 +43,10 @@ public class EmployeeController {
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<EmployeeResponse>>> getAllEmployees() {
-        return ResponseEntity.ok(ApiResponse.success(employeeService.getAllEmployees(), "Employees fetched successfully"));
+    public ResponseEntity<ApiResponse<PaginatedResponse<EmployeeResponse>>> getAllEmployees(
+            @RequestParam(required = false) String search,
+            @PageableDefault(size = 10) Pageable pageable) {
+        return ResponseEntity.ok(ApiResponse.success(employeeService.getAllEmployees(search, pageable), "Employees fetched successfully"));
     }
 
     @DeleteMapping("/{id}")

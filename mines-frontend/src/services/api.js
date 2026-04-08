@@ -35,8 +35,10 @@ export const authApi = {
 };
 
 export const productApi = {
-  getAll: async () => {
-    const response = await api.get("/products");
+  getAll: async (page = 0, size = 10, search = "") => {
+    const response = await api.get("/products", {
+      params: { page, size, search }
+    });
     return response.data;
   },
 
@@ -58,8 +60,10 @@ export const productApi = {
 };
 
 export const employeeApi = {
-  getAll: async () => {
-    const response = await api.get("/employees");
+  getAll: async (page = 0, size = 10, search = "") => {
+    const response = await api.get("/employees", {
+      params: { page, size, search }
+    });
     return response.data;
   },
 
@@ -90,8 +94,10 @@ export const employeeApi = {
 };
 
 export const adminApi = {
-  getCompanies: async () => {
-    const response = await api.get("/admin/companies");
+  getCompanies: async (page = 0, size = 10, search = "") => {
+    const response = await api.get("/admin/companies", {
+      params: { page, size, search }
+    });
     return response.data;
   },
   upsertCompany: async (companyData) => {
@@ -108,6 +114,63 @@ export const adminApi = {
   },
   getRoles: async () => {
     const response = await api.get("/admin/roles");
+    return response.data;
+  }
+};
+
+export const customerApi = {
+  getAll: async (page = 0, size = 10, search = "") => {
+    const response = await api.get("/customers", {
+      params: { page, size, search }
+    });
+    return response.data;
+  },
+  upsert: async (customerData, id = null) => {
+    const response = await api.post("/customers/upsert", customerData, {
+      params: id ? { id } : {}
+    });
+    return response.data;
+  },
+  delete: async (id) => {
+    const response = await api.delete(`/customers/${id}`);
+    return response.data;
+  }
+};
+
+export const transporterApi = {
+  getAll: async (page = 0, size = 10, search = "") => {
+    const response = await api.get("/transporters", {
+      params: { page, size, search }
+    });
+    return response.data;
+  },
+  upsert: async (transporterData, id = null) => {
+    const response = await api.post("/transporters/upsert", transporterData, {
+      params: id ? { id } : {}
+    });
+    return response.data;
+  },
+  delete: async (id) => {
+    const response = await api.delete(`/transporters/${id}`);
+    return response.data;
+  }
+};
+
+export const truckApi = {
+  getAll: async (page = 0, size = 10, search = "") => {
+    const response = await api.get("/trucks", {
+      params: { page, size, search }
+    });
+    return response.data;
+  },
+  upsert: async (truckData, id = null) => {
+    const response = await api.post("/trucks/upsert", truckData, {
+      params: id ? { id } : {}
+    });
+    return response.data;
+  },
+  delete: async (id) => {
+    const response = await api.delete(`/trucks/${id}`);
     return response.data;
   }
 };

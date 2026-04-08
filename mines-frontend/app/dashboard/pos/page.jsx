@@ -69,11 +69,11 @@ export default function PosBillingListPage() {
     return (
         <Box sx={{ p: 0, backgroundColor: "#F8F9FA", minHeight: "100vh" }}>
             {/* Action Bar */}
-            <Box sx={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center', 
-                mb: 3, 
+            <Box sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                mb: 3,
                 backgroundColor: "#FFFFFF",
                 p: 2,
                 borderRadius: "12px",
@@ -153,9 +153,9 @@ export default function PosBillingListPage() {
                     </TableHead>
                     <TableBody>
                         {paginatedList.map((row) => (
-                            <TableRow 
-                                key={row.id} 
-                                sx={{ 
+                            <TableRow
+                                key={row.id}
+                                sx={{
                                     backgroundColor: row.color,
                                     cursor: 'pointer',
                                     '&:hover': { opacity: 0.8 }
@@ -191,11 +191,11 @@ export default function PosBillingListPage() {
                 page={page}
                 onPageChange={handleChangePage}
                 onRowsPerPageChange={handleChangeRowsPerPage}
-                sx={{ 
-                    borderTop: "1px solid #F3F4F6", 
+                sx={{
+                    borderTop: "1px solid #F3F4F6",
                     backgroundColor: "#FFFFFF",
                     borderRadius: "12px",
-                    ".MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows": { color: "#6B7280", fontWeight: 500 } 
+                    ".MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows": { color: "#6B7280", fontWeight: 500 }
                 }}
             />
         </Box>

@@ -45,8 +45,7 @@ public class Employee extends BaseEntity {
 
     private String email;
 
-    @OneToOne(cascade = CascadeType.ALL)
-    @JoinColumn(name = "address_id", referencedColumnName = "id")
+    @Embedded
     private Address address;
 
     // --- STEP 2: DOCUMENTS & SALARY ---

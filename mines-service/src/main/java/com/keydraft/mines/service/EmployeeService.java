@@ -11,6 +11,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+
 import java.security.SecureRandom;
 import java.util.List;
 import java.util.UUID;
@@ -45,7 +49,6 @@ public class EmployeeService {
         if (address == null)
             return null;
         return AddressResponse.builder()
-                .id(address.getId())
                 .addressLine1(address.getAddressLine1())
                 .addressLine2(address.getAddressLine2())
                 .district(address.getDistrict())
@@ -245,8 +248,38 @@ public class EmployeeService {
         return mapToResponse(saved);
     }
 
-    public List<EmployeeResponse> getAllEmployees() {
+    public List<EmployeeResponse> getAllEmployeesList() {
         return employeeRepository.findAll().stream().map(this::mapToResponse).collect(Collectors.toList());
+    }
+
+    public PaginatedResponse<EmployeeResponse> getAllEmployees(String search, Pageable pageable) {
+        Specification<Employee> spec = (root, query, cb) -> {
+            if (search == null || search.isEmpty()) {
+                return cb.conjunction();
+            }
+            String pattern = "%" + search.toLowerCase() + "%";
+            return cb.or(
+                    cb.like(cb.lower(root.get("firstName")), pattern),
+                    cb.like(cb.lower(root.get("lastName")), pattern),
+                    cb.like(cb.lower(root.get("employeeCode")), pattern),
+                    cb.like(cb.lower(root.get("contactNumber")), pattern),
+                    cb.like(cb.lower(root.get("email")), pattern)
+            );
+        };
+
+        Page<Employee> page = employeeRepository.findAll(spec, pageable);
+        List<EmployeeResponse> content = page.getContent().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+
+        return PaginatedResponse.<EmployeeResponse>builder()
+                .content(content)
+                .pageNumber(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
     }
 
     @Transactional

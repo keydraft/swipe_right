@@ -21,8 +21,7 @@ public class Company extends BaseEntity {
     @Column(nullable = false, unique = true)
     private String name;
 
-    @OneToOne(cascade = CascadeType.ALL)
-    @JoinColumn(name = "address_id", referencedColumnName = "id")
+    @Embedded
     private Address address;
 
     private String phone;

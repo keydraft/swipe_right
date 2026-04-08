@@ -1,5 +1,6 @@
 package com.keydraft.mines.service;
 
+import com.keydraft.mines.dto.PaginatedResponse;
 import com.keydraft.mines.dto.ProductRequest;
 import com.keydraft.mines.dto.ProductResponse;
 import com.keydraft.mines.entity.*;
@@ -8,6 +9,9 @@ import com.keydraft.mines.repository.BranchRepository;
 import com.keydraft.mines.repository.CompanyRepository;
 import com.keydraft.mines.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,10 +68,38 @@ public class ProductService {
         return mapToResponse(savedProduct);
     }
 
-    public List<ProductResponse> getAllProducts() {
+    public List<ProductResponse> getAllProductsList() {
         return productRepository.findAll().stream()
                 .map(this::mapToResponse)
                 .collect(Collectors.toList());
+    }
+
+    public PaginatedResponse<ProductResponse> getAllProducts(String search, Pageable pageable) {
+        Specification<Product> spec = (root, query, cb) -> {
+            if (search == null || search.isEmpty()) {
+                return cb.conjunction();
+            }
+            String pattern = "%" + search.toLowerCase() + "%";
+            return cb.or(
+                    cb.like(cb.lower(root.get("name")), pattern),
+                    cb.like(cb.lower(root.get("shortName")), pattern),
+                    cb.like(cb.lower(root.get("hsnCode")), pattern)
+            );
+        };
+
+        Page<Product> page = productRepository.findAll(spec, pageable);
+        List<ProductResponse> content = page.getContent().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+
+        return PaginatedResponse.<ProductResponse>builder()
+                .content(content)
+                .pageNumber(page.getNumber())
+                .pageSize(page.getSize())
+                .totalElements(page.getTotalElements())
+                .totalPages(page.getTotalPages())
+                .last(page.isLast())
+                .build();
     }
 
     public List<ProductResponse> getProductsByCompany(UUID companyId) {

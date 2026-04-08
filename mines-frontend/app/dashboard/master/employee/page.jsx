@@ -34,10 +34,14 @@ export default function EmployeePage() {
     const [companies, setCompanies] = useState([]);
     const [availableBranches, setAvailableBranches] = useState([]);
     const [currentUserRank, setCurrentUserRank] = useState(0);
+
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [totalElements, setTotalElements] = useState(0);
+
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     const handleChangePage = (event, newPage) => setPage(newPage);
     const handleChangeRowsPerPage = (event) => {
@@ -104,16 +108,15 @@ export default function EmployeePage() {
     });
 
     const fetchInitialData = async () => {
+        setIsLoading(true);
         try {
-            const [empResp, roleResp, compResp] = await Promise.all([
-                employeeApi.getAll(),
+            const [roleResp, compResp] = await Promise.all([
                 adminApi.getRoles(),
-                adminApi.getCompanies()
+                adminApi.getCompanies(0, 500)
             ]);
 
-            if (empResp.success) setEmployees(empResp.data);
             if (roleResp.success) setRoles(roleResp.data);
-            if (compResp.success) setCompanies(compResp.data);
+            if (compResp.success) setCompanies(compResp.data.content);
 
             // Get current user rank from localStorage
             const savedUser = localStorage.getItem("user");
@@ -122,8 +125,24 @@ export default function EmployeePage() {
                 const userRole = roleResp.data.find(r => r.name === user.roleName);
                 if (userRole) setCurrentUserRank(userRole.rank);
             }
+            
+            await fetchEmployees();
         } catch (error) {
-            console.error("Error fetching employee data:", error);
+            console.error("Error fetching initial employee data:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchEmployees = async () => {
+        try {
+            const response = await employeeApi.getAll(page, rowsPerPage, searchQuery);
+            if (response.success) {
+                setEmployees(response.data.content);
+                setTotalElements(response.data.totalElements);
+            }
+        } catch (error) {
+            console.error("Error fetching employees:", error);
         }
     };
 
@@ -131,6 +150,13 @@ export default function EmployeePage() {
         fetchInitialData();
         setIsInitialized(true);
     }, []);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            fetchEmployees();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [page, rowsPerPage, searchQuery]);
 
     const formik = useFormik({
         initialValues,
@@ -157,13 +183,9 @@ export default function EmployeePage() {
                 const response = await employeeApi.upsert(payload, files);
                 if (response.success) {
                     setShowSuccess(true);
-                    // Refresh data
-                    const listResp = await employeeApi.getAll();
-                    if (listResp.success) setEmployees(listResp.data);
-
                     setTimeout(() => {
                         handleCloseModal();
-                        fetchInitialData();
+                        fetchEmployees();
                     }, 2000);
                 }
             } catch (error) {
@@ -475,7 +497,6 @@ export default function EmployeePage() {
                         onBlur={formik.handleBlur}
                         error={!!error}
                         helperText={error}
-                        inputProps={field.includes('addressLine') ? { maxLength: 50 } : {}}
                         InputProps={field === "password" ? {
                             endAdornment: (
                                 <InputAdornment position="end">
@@ -696,7 +717,10 @@ export default function EmployeePage() {
                     variant="outlined"
                     placeholder="Search employees..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setPage(0);
+                    }}
                     InputProps={{
                         startAdornment: (
                             <InputAdornment position="start">
@@ -752,59 +776,62 @@ export default function EmployeePage() {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {filteredEmployees
-                                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                                .map((employee) => (
-                                    <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
-                                        <TableCell sx={{ fontSize: '12px', color: palette.text.secondary }}>{employee.id.substring(0, 8)}...</TableCell>
-                                        <TableCell>{employee.firstName}</TableCell>
-                                        <TableCell>{employee.lastName}</TableCell>
-                                        <TableCell>{employee.designation}</TableCell>
-                                        <TableCell>{employee.phone}</TableCell>
-                                        <TableCell>{employee.address?.pincode}</TableCell>
-                                        <TableCell align="center">
-                                            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                                                <Tooltip title="View">
-                                                    <IconButton size="small" sx={{ color: palette.primary.main }}>
-                                                        <ViewIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Edit">
-                                                    <IconButton
-                                                        size="small"
-                                                        sx={{ color: '#0057FF' }}
-                                                        onClick={() => handleEditEmployee(employee)}
-                                                    >
-                                                        <EditIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                                <Tooltip title="Delete">
-                                                    <IconButton
-                                                        size="small"
-                                                        sx={{ color: '#EF4444' }}
-                                                        onClick={() => handleDeleteEmployee(employee.id)}
-                                                    >
-                                                        <DeleteIcon fontSize="small" />
-                                                    </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            {filteredEmployees.length === 0 && (
+                            {isLoading ? (
+                                <TableRow>
+                                    <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                                        <CircularProgress size={24} />
+                                    </TableCell>
+                                </TableRow>
+                            ) : employees.length === 0 ? (
                                 <TableRow>
                                     <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
                                         <Typography color="textSecondary">No employees found</Typography>
                                     </TableCell>
                                 </TableRow>
-                            )}
+                            ) : employees.map((employee) => (
+                                <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
+                                    <TableCell sx={{ fontSize: '12px', color: palette.text.secondary }}>{employee.id.substring(0, 8)}...</TableCell>
+                                    <TableCell>{employee.firstName}</TableCell>
+                                    <TableCell>{employee.lastName}</TableCell>
+                                    <TableCell>{employee.designation}</TableCell>
+                                    <TableCell>{employee.phone}</TableCell>
+                                    <TableCell>{employee.address?.pincode}</TableCell>
+                                    <TableCell align="center">
+                                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                                            <Tooltip title="View">
+                                                <IconButton size="small" sx={{ color: palette.primary.main }}>
+                                                    <ViewIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Edit">
+                                                <IconButton
+                                                    size="small"
+                                                    sx={{ color: '#0057FF' }}
+                                                    onClick={() => handleEditEmployee(employee)}
+                                                >
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete">
+                                                <IconButton
+                                                    size="small"
+                                                    sx={{ color: '#EF4444' }}
+                                                    onClick={() => handleDeleteEmployee(employee.id)}
+                                                >
+                                                    <DeleteIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                        </Box>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
                         </TableBody>
                     </Table>
                 </TableContainer>
                 <TablePagination
                     rowsPerPageOptions={[5, 10, 25]}
                     component="div"
-                    count={filteredEmployees.length}
+                    count={totalElements}
                     rowsPerPage={rowsPerPage}
                     page={page}
                     onPageChange={handleChangePage}
