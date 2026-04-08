@@ -18,43 +18,10 @@ import { productApi, adminApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 
-const mockProducts = [
-    {
-        id: 1,
-        name: "Aggregate 10mm",
-        shortName: "AGG10",
-        hsnc: "2517",
-        gst: "5",
-        rmType: "Raw Material",
-        status: "Active",
-        plantPrices: []
-    },
-    {
-        id: 2,
-        name: "Aggregate 20mm",
-        shortName: "AGG20",
-        hsnc: "2517",
-        gst: "5",
-        rmType: "Raw Material",
-        status: "Active",
-        plantPrices: []
-    },
-    {
-        id: 3,
-        name: "Stone Dust",
-        shortName: "SDUST",
-        hsnc: "2517",
-        gst: "5",
-        rmType: "Raw Material",
-        status: "Inactive",
-        plantPrices: []
-    },
-];
-
 export default function ProductPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
-    const [products, setProducts] = useState(mockProducts);
+    const [products, setProducts] = useState([]);
     const [isInitialized, setIsInitialized] = useState(false);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -68,7 +35,7 @@ export default function ProductPage() {
         gst: "0",
         rmType: "",
         status: "Active",
-        plantPrices: []
+        branchPrices: []
     };
 
     const validationSchema = Yup.object({
@@ -83,7 +50,7 @@ export default function ProductPage() {
         initialValues,
         validationSchema,
         onSubmit: async (values) => {
-            const companyId = values.plantPrices?.[0]?.companyId || null;
+            const companyId = values.branchPrices?.[0]?.companyId || null;
             if (!companyId) {
                 alert("No company found. Please create a company and site first.");
                 return;
@@ -97,7 +64,7 @@ export default function ProductPage() {
                 rmType: values.rmType || "CRUSHER",
                 active: values.status === "Active",
                 companyId: companyId,
-                prices: values.plantPrices.map(p => ({
+                prices: values.branchPrices.map(p => ({
                     branchId: p.branchId,
                     rate: parseFloat(p.rate)
                 }))
@@ -129,14 +96,14 @@ export default function ProductPage() {
             })));
         }
 
-        const initialPlantPrices = availableBranches.map(branch => ({
+        const initialBranchPrices = availableBranches.map(branch => ({
             branchId: branch.id,
-            siteName: branch.name,
+            branchName: branch.name,
             rate: "0",
             companyId: branch.companyId
         }));
 
-        formik.setValues({ ...initialValues, plantPrices: initialPlantPrices });
+        formik.setValues({ ...initialValues, branchPrices: initialBranchPrices });
         setIsEditing(false);
         setEditingId(null);
         setOpenModal(true);
@@ -147,10 +114,10 @@ export default function ProductPage() {
         formik.resetForm();
     };
 
-    const handlePlantPriceChange = (index, value) => {
-        const newPlantPrices = [...formik.values.plantPrices];
-        newPlantPrices[index].rate = value;
-        formik.setFieldValue("plantPrices", newPlantPrices);
+    const handleBranchPriceChange = (index, value) => {
+        const newBranchPrices = [...formik.values.branchPrices];
+        newBranchPrices[index].rate = value;
+        formik.setFieldValue("branchPrices", newBranchPrices);
     };
 
 
@@ -172,7 +139,7 @@ export default function ProductPage() {
             const existing = (product.prices || []).find(p => p.branchId === branch.id);
             return {
                 branchId: branch.id,
-                siteName: branch.name,
+                branchName: branch.name,
                 rate: existing ? existing.rate.toString() : "0",
                 companyId: branch.companyId
             };
@@ -185,7 +152,7 @@ export default function ProductPage() {
             gst: product.gstPercentage?.toString() || "0",
             rmType: product.rmType || "",
             status: product.active ? "Active" : "Inactive",
-            plantPrices: mergedPlantPrices
+            branchPrices: mergedPlantPrices
         });
         setIsEditing(true);
         setEditingId(product.id);
@@ -228,7 +195,7 @@ export default function ProductPage() {
             {/* Header Section */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h3" sx={{ fontWeight: 900, color: palette.text.secondary }}>
-                    Product List
+                    Product
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 2 }}>
                     <Button
@@ -508,26 +475,26 @@ export default function ProductPage() {
                             </Select>
                         </Box>
 
-                        {/* Plant Table Section */}
+                        {/* Branch Table Section */}
                         <TableContainer sx={{ mt: 1, borderTop: '1px solid #F3F4F6' }}>
                             <Table size="small">
                                 <TableHead>
                                     <TableRow>
                                         <TableCell sx={{ color: '#3B82F6', fontWeight: 600, borderBottom: 'none', py: 2 }}>S.No</TableCell>
-                                        <TableCell sx={{ color: '#3B82F6', fontWeight: 600, borderBottom: 'none' }}>Plant Name</TableCell>
+                                        <TableCell sx={{ color: '#3B82F6', fontWeight: 600, borderBottom: 'none' }}>Branch Name</TableCell>
                                         <TableCell sx={{ color: '#3B82F6', fontWeight: 600, borderBottom: 'none' }}>Price</TableCell>
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {(formik.values.plantPrices || []).map((plant, index) => (
+                                    {(formik.values.branchPrices || []).map((plant, index) => (
                                         <TableRow key={index}>
                                             <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 2 }}>{index + 1}</TableCell>
-                                            <TableCell sx={{ borderBottom: '1px solid #F3F4F6', color: '#374151', fontWeight: 500 }}>{plant.siteName}</TableCell>
+                                            <TableCell sx={{ borderBottom: '1px solid #F3F4F6', color: '#374151', fontWeight: 500 }}>{plant.branchName}</TableCell>
                                             <TableCell sx={{ borderBottom: '1px solid #F3F4F6' }}>
                                                 <TextField 
                                                     size="small"
                                                     value={plant.rate}
-                                                    onChange={(e) => handlePlantPriceChange(index, e.target.value)}
+                                                    onChange={(e) => handleBranchPriceChange(index, e.target.value)}
                                                     InputProps={{
                                                         sx: { position: 'relative', height: '36px' },
                                                         startAdornment: (

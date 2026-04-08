@@ -4,14 +4,14 @@ import React from "react";
 import { Box, Typography, Card, CardContent } from "@mui/material";
 import { palette } from "@/theme";
 
-export default function EmployeePage() {
+export default function TruckPage() {
     return (
         <Box sx={{ animation: "fadeIn 0.5s ease-out" }}>
             <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: palette.text.primary }}>
-                Transport
+                Truck
             </Typography>
             <Typography variant="body1" sx={{ color: palette.text.secondary, mb: 4 }}>
-                Manage all transport records and permissions here.
+                Manage all truck records and permissions here.
             </Typography>
 
             <Card sx={{
@@ -25,7 +25,7 @@ export default function EmployeePage() {
             }}>
                 <CardContent>
                     <Typography variant="h6" color="text.secondary">
-                        Transport page interface will go here.
+                        Truck page interface will go here.
                     </Typography>
                 </CardContent>
             </Card>

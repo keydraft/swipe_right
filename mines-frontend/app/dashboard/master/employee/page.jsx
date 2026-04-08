@@ -14,19 +14,9 @@ import {
 } from "@mui/icons-material";
 import { useRouter } from "next/navigation";
 import { palette } from "@/theme";
+import { employeeApi, adminApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
-
-const mockEmployees = [
-    {
-        id: "00001",
-        firstName: "Sivanesa",
-        lastName: "M",
-        role: "Site Manager",
-        phone: "9876543210",
-        pincode: "600001",
-    }
-];
 
 export default function EmployeePage() {
     const [searchQuery, setSearchQuery] = useState("");
@@ -34,17 +24,29 @@ export default function EmployeePage() {
     const [activeStep, setActiveStep] = useState(0);
     const router = useRouter();
 
-    const [employees, setEmployees] = useState(mockEmployees);
+    const [employees, setEmployees] = useState([]);
     const [isInitialized, setIsInitialized] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
+    const [roles, setRoles] = useState([]);
+    const [companies, setCompanies] = useState([]);
+    const [availableBranches, setAvailableBranches] = useState([]);
+    const [currentUserRank, setCurrentUserRank] = useState(0); // Default to 0 (highest privilege) so roles are visible by default
+    
+    // File state
+    const [files, setFiles] = useState({
+        passbook: null,
+        aadhaar: null,
+        pan: null,
+        drivingLicense: null
+    });
 
     // Initial values for Formik
     const initialValues = {
-        firstName: "", lastName: "", gender: "male", role: "", consignor: "", plant: "",
-        dob: "", doj: "", addressLine1: "", addressLine2: "", district: "", state: "",
-        pincode: "", phone: "", userName: "", password: "",
-        salaryType: "", basicSalary: "", accountHolderName: "", bankName: "",
-        accountNumber: "", ifscCode: "", aadhaarNumber: "", panNumber: "", drivingLicense: ""
+        firstName: "", lastName: "", gender: "male", role: "", companyId: "", branchId: "",
+        dateOfBirth: "", dateOfJoining: "", addressLine1: "", addressLine2: "", district: "", state: "",
+        pincode: "", contactNumber: "", username: "", password: "",
+        salaryType: "", basicSalary: "", bankAccountHolderName: "", bankName: "",
+        bankAccountNumber: "", ifscCode: "", aadhaarNumber: "", panNumber: "", drivingLicenseNumber: ""
     };
 
     // Yup validation schema
@@ -52,62 +54,85 @@ export default function EmployeePage() {
         firstName: Yup.string().required("First name is required"),
         lastName: Yup.string().required("Last name is required"),
         role: Yup.string().required("Role is required"),
-        phone: Yup.string().matches(/^[0-9]{10,12}$/, "Phone must be 10-12 digits").required("Contact number is required"),
+        contactNumber: Yup.string().matches(/^[0-9]{10,12}$/, "Phone must be 10-12 digits").required("Contact number is required"),
         pincode: Yup.string().matches(/^[0-9]{6}$/, "Pincode must be 6 digits"),
         addressLine1: Yup.string().required("Address is required"),
         district: Yup.string().required("District is required"),
         state: Yup.string().required("State is required"),
-        userName: Yup.string().required("User name is required"),
+        username: Yup.string().required("User name is required"),
         password: Yup.string().min(6, "Password must be at least 6 characters").required("Password is required"),
+        dateOfBirth: Yup.string().required("DOB is required"),
+        dateOfJoining: Yup.string().required("DOJ is required"),
     });
+
+    const fetchInitialData = async () => {
+        try {
+            const [empResp, roleResp, compResp] = await Promise.all([
+                employeeApi.getAll(),
+                adminApi.getRoles(),
+                adminApi.getCompanies()
+            ]);
+            
+            if (empResp.success) setEmployees(empResp.data);
+            if (roleResp.success) setRoles(roleResp.data);
+            if (compResp.success) setCompanies(compResp.data);
+
+            // Get current user rank from localStorage
+            const savedUser = localStorage.getItem("user");
+            if (savedUser) {
+                const user = JSON.parse(savedUser);
+                const userRole = roleResp.data.find(r => r.name === user.roleName);
+                if (userRole) setCurrentUserRank(userRole.rank);
+            }
+        } catch (error) {
+            console.error("Error fetching employee data:", error);
+        }
+    };
+
+    useEffect(() => {
+        fetchInitialData();
+        setIsInitialized(true);
+    }, []);
 
     const formik = useFormik({
         initialValues,
         validationSchema: employeeValidationSchema,
         validateOnBlur: true,
         validateOnChange: false,
-        onSubmit: (values) => {
-            const nextId = employees.length > 0 ? (Math.max(...employees.map(e => parseInt(e.id))) + 1).toString().padStart(5, '0') : "00001";
-            const newEmployee = {
-                id: nextId,
-                ...values
-            };
-            setEmployees([...employees, newEmployee]);
-            setShowSuccess(true);
-
-            // Auto close after 2 seconds
-            setTimeout(() => {
-                handleCloseModal();
-            }, 2000);
+        onSubmit: async (values) => {
+            try {
+                // Ensure date format is YYYY-MM-DD for backend
+                const payload = {
+                    ...values,
+                    basicSalary: parseFloat(values.basicSalary) || 0
+                };
+                
+                const response = await employeeApi.upsert(payload, files);
+                if (response.success) {
+                    setShowSuccess(true);
+                    const listResp = await employeeApi.getAll();
+                    if (listResp.success) setEmployees(listResp.data);
+                    
+                    setTimeout(() => {
+                        handleCloseModal();
+                    }, 2000);
+                }
+            } catch (error) {
+                console.error("Error saving employee:", error);
+                alert("Failed to save employee: " + (error.response?.data?.message || "Unknown error"));
+            }
         },
     });
 
-    // Persist data in localStorage
-    useEffect(() => {
-        if (typeof window !== "undefined") {
-            const saved = localStorage.getItem("employees");
-            if (saved !== null) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    if (Array.isArray(parsed)) setEmployees(parsed);
-                } catch (e) {
-                    console.error("Error parsing employees", e);
-                }
-            } else {
-                localStorage.setItem("employees", JSON.stringify(mockEmployees));
-            }
-            setIsInitialized(true);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (typeof window !== "undefined" && isInitialized) {
-            localStorage.setItem("employees", JSON.stringify(employees));
-        }
-    }, [employees, isInitialized]);
+    const filteredRoles = React.useMemo(() => {
+        const list = roles.filter(role => role.rank > currentUserRank);
+        console.log("Filtering roles (rank > current):", { rolesCount: roles.length, currentUserRank, filteredCount: list.length });
+        return list;
+    }, [roles, currentUserRank]);
 
     const handleOpenModal = () => {
         formik.resetForm();
+        setFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
         setOpenModal(true);
     };
 
@@ -118,16 +143,18 @@ export default function EmployeePage() {
         setShowSuccess(false);
     };
 
+    const handleFileUpload = (field, file) => {
+        setFiles(prev => ({ ...prev, [field]: file }));
+    };
+
     const handleNext = async () => {
         const errors = await formik.validateForm();
         if (activeStep === 0) {
-            const step1Fields = ['firstName', 'lastName', 'role', 'phone', 'addressLine1', 'district', 'state', 'pincode'];
+            const step1Fields = ['firstName', 'lastName', 'role', 'contactNumber', 'addressLine1', 'district', 'state', 'pincode', 'dateOfBirth', 'dateOfJoining'];
             const touchedFields = step1Fields.reduce((acc, field) => ({ ...acc, [field]: true }), {});
             formik.setTouched(touchedFields);
             const step1Errors = step1Fields.filter(key => errors[key]);
             if (step1Errors.length > 0) return;
-        } else if (activeStep === 1) {
-            // Add any step 2 validation here if needed
         }
         setActiveStep((prev) => prev + 1);
     };
@@ -206,6 +233,13 @@ export default function EmployeePage() {
                 </Box>
             );
         }
+
+        let options = [];
+        if (field === "role") options = filteredRoles.map(r => ({ label: r.name, value: r.name }));
+        else if (field === "companyId") options = companies.map(c => ({ label: c.name, value: c.id }));
+        else if (field === "branchId") options = availableBranches.map(b => ({ label: b.name, value: b.id }));
+        else if (field === "salaryType") options = [{ label: "Monthly", value: "MONTHLY" }, { label: "Daily", value: "DAILY" }, { label: "Hourly", value: "HOURLY" }];
+
         return (
             <Box sx={{ width: '100%' }}>
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
@@ -214,16 +248,23 @@ export default function EmployeePage() {
                         fullWidth size="small"
                         name={field}
                         value={value}
-                        onChange={formik.handleChange}
+                        onChange={(e) => {
+                            formik.handleChange(e);
+                            if (field === "companyId") {
+                                const company = companies.find(c => c.id === e.target.value);
+                                setAvailableBranches(company ? company.branches : []);
+                                formik.setFieldValue("branchId", "");
+                            }
+                        }}
                         onBlur={formik.handleBlur}
                         error={!!error}
                         displayEmpty
                         sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
                     >
                         <MenuItem value="">{placeholder}</MenuItem>
-                        <MenuItem value="Admin">Admin</MenuItem>
-                        <MenuItem value="Manager">Manager</MenuItem>
-                        <MenuItem value="Staff">Staff</MenuItem>
+                        {options.map((opt, i) => (
+                            <MenuItem key={i} value={opt.value}>{opt.label}</MenuItem>
+                        ))}
                     </Select>
                 ) : (
                     <TextField
@@ -233,14 +274,7 @@ export default function EmployeePage() {
                         placeholder={placeholder}
                         variant="outlined"
                         value={value}
-                        onChange={(e) => {
-                            if (field === 'bankName' || field === 'accountHolderName') {
-                                const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
-                                formik.setFieldValue(field, val);
-                            } else {
-                                formik.handleChange(e);
-                            }
-                        }}
+                        onChange={formik.handleChange}
                         onBlur={formik.handleBlur}
                         error={!!error}
                         helperText={error}
@@ -251,25 +285,38 @@ export default function EmployeePage() {
         );
     };
 
-    const renderUploadButton = (label) => (
-        <Button
-            variant="contained"
-            disableElevation
-            fullWidth
-            startIcon={<UploadIcon />}
-            sx={{
-                background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
-                borderRadius: '8px',
-                textTransform: 'none',
-                fontWeight: 600,
-                fontSize: '13px',
-                py: 1.2,
-                mt: label === "Upload Passbook" ? 0 : 2.5,
-                '&:hover': { background: 'linear-gradient(135deg, #003499 0%, #001A4D 100%)' }
-            }}
-        >
-            {label}
-        </Button>
+    const renderUploadButton = (label, field) => (
+        <Box>
+            <input
+                type="file"
+                id={`file-${field}`}
+                style={{ display: 'none' }}
+                onChange={(e) => handleFileUpload(field, e.target.files[0])}
+            />
+            <label htmlFor={`file-${field}`}>
+                <Button
+                    component="span"
+                    variant="contained"
+                    disableElevation
+                    fullWidth
+                    startIcon={<UploadIcon />}
+                    sx={{
+                        background: files[field] 
+                            ? 'linear-gradient(135deg, #10B981 0%, #059669 100%)' 
+                            : 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                        borderRadius: '8px',
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        fontSize: '13px',
+                        py: 1.2,
+                        mt: label === "Upload Passbook" ? 0 : 2.5,
+                        '&:hover': { background: files[field] ? '#059669' : '#003499' }
+                    }}
+                >
+                    {files[field] ? files[field].name : label}
+                </Button>
+            </label>
+        </Box>
     );
 
     const renderSuccessStep = () => (
@@ -309,16 +356,16 @@ export default function EmployeePage() {
                         <Box sx={{ width: itemWidth }}>{renderField("Last Name", "Enter the last name", false, "text", "lastName")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Gender", "", false, "radio", "gender")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Role", "Select role", true, "text", "role")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Consignor", "Select consignor", true, "text", "consignor")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Plant", "Select plant", true, "text", "plant")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Date of Birth", "dd-mm-yyyy", false, "text", "dob")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Date of Joining", "dd-mm-yyyy", false, "text", "doj")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Company", "Select company", true, "text", "companyId")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Branch", "Select branch", true, "text", "branchId")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Date of Birth", "yyyy-mm-dd", false, "date", "dateOfBirth")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Date of Joining", "yyyy-mm-dd", false, "date", "dateOfJoining")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Address Line 1", "Enter address", false, "text", "addressLine1")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Address Line 2", "Enter address", false, "text", "addressLine2")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("District", "Choose district", false, "text", "district")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("State", "Choose State", false, "text", "state")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Pincode", "Choose Pincode", false, "text", "pincode")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Contact Number", "Enter contact number", false, "text", "phone")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Contact Number", "Enter contact number", false, "text", "contactNumber")}</Box>
                     </Box>
                 );
             case 1:
@@ -331,34 +378,34 @@ export default function EmployeePage() {
 
                         {/* Bank Details */}
                         <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Bank Details</Typography></Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Account Holder Name", "Enter name", false, "text", "accountHolderName")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Account Holder Name", "Enter name", false, "text", "bankAccountHolderName")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Bank Name", "Enter bank name", false, "text", "bankName")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Account Number", "Enter account number", false, "text", "accountNumber")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Account Number", "Enter account number", false, "text", "bankAccountNumber")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("IFSC Code", "Enter IFSC code", false, "text", "ifscCode")}</Box>
 
                         {/* Upload Passbook */}
                         <Box sx={{ width: itemWidth, mt: 1 }}>
                             <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Upload Passbook</Typography>
-                            {renderUploadButton("Upload Passbook")}
+                            {renderUploadButton("Upload Passbook", "passbook")}
                         </Box>
                         <Box sx={{ width: itemWidth }}></Box>
 
                         {/* Upload Documents */}
                         <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Upload Documents</Typography></Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Aadhaar Number", "Enter aadhaar number", false, "text", "aadhaarNumber")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderUploadButton("Upload Aadhaar")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderUploadButton("Upload Aadhaar", "aadhaar")}</Box>
 
                         <Box sx={{ width: itemWidth }}>{renderField("PAN Number", "Enter PAN number", false, "text", "panNumber")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderUploadButton("Upload PAN")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderUploadButton("Upload PAN", "pan")}</Box>
 
-                        <Box sx={{ width: itemWidth }}>{renderField("Driving License Number", "Enter driving license number", false, "text", "drivingLicense")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderUploadButton("Upload Driving License")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("Driving License Number", "Enter driving license number", false, "text", "drivingLicenseNumber")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderUploadButton("Upload Driving License", "drivingLicense")}</Box>
                     </Box>
                 );
             case 2:
                 return (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
-                        <Box sx={{ width: itemWidth }}>{renderField("User Name", "Enter user name", false, "text", "userName")}</Box>
+                        <Box sx={{ width: itemWidth }}>{renderField("User Name", "Enter user name", false, "text", "username")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Password", "Enter password", false, "password", "password")}</Box>
                     </Box>
                 );
@@ -366,12 +413,18 @@ export default function EmployeePage() {
         }
     };
 
+    const filteredEmployees = employees.filter(employee => 
+        (employee.firstName + " " + employee.lastName).toLowerCase().includes(searchQuery.toLowerCase()) ||
+        employee.designation?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        employee.phone?.includes(searchQuery)
+    );
+
     return (
         <Box sx={{ animation: "fadeIn 0.5s ease-out" }}>
             {/* Header Section */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h3" sx={{ fontWeight: 900, color: palette.text.secondary }}>
-                    Employee List
+                    Employee
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 2 }}>
                     <Button
@@ -395,7 +448,7 @@ export default function EmployeePage() {
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, }}>
                 <TextField
                     variant="outlined"
-                    placeholder="Type here..."
+                    placeholder="Search employees..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     InputProps={{
@@ -453,14 +506,14 @@ export default function EmployeePage() {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {employees.map((employee) => (
+                            {filteredEmployees.map((employee) => (
                                 <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
-                                    <TableCell>{employee.id}</TableCell>
+                                    <TableCell sx={{ fontSize: '12px', color: palette.text.secondary }}>{employee.id.substring(0, 8)}...</TableCell>
                                     <TableCell>{employee.firstName}</TableCell>
                                     <TableCell>{employee.lastName}</TableCell>
-                                    <TableCell>{employee.role}</TableCell>
+                                    <TableCell>{employee.designation}</TableCell>
                                     <TableCell>{employee.phone}</TableCell>
-                                    <TableCell>{employee.pincode}</TableCell>
+                                    <TableCell>{employee.address?.pincode}</TableCell>
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
                                             <Tooltip title="View">
@@ -477,6 +530,13 @@ export default function EmployeePage() {
                                     </TableCell>
                                 </TableRow>
                             ))}
+                            {filteredEmployees.length === 0 && (
+                                <TableRow>
+                                    <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                                        <Typography color="textSecondary">No employees found</Typography>
+                                    </TableCell>
+                                </TableRow>
+                            )}
                         </TableBody>
                     </Table>
                 </TableContainer>

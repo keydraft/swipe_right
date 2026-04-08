@@ -18,52 +18,13 @@ import { adminApi } from "@/services/api";
 import { useFormik, FormikProvider, FieldArray } from "formik";
 import * as Yup from "yup";
 
-const mockCompanies = [
-    {
-        id: 1,
-        name: "Tech Solutions Inc.",
-        invoiceInitial: "TSI",
-        gstn: "27ABCDE1234F1Z5",
-        addressLine1: "123 Tech Park",
-        addressLine2: "Phase 1",
-        district: "Mumbai",
-        state: "Maharashtra",
-        pincode: "400001",
-        phone: "9876543210"
-    },
-    {
-        id: 2,
-        name: "Global Exports",
-        invoiceInitial: "GLO",
-        gstn: "29WXYZ9876Q1Z2",
-        addressLine1: "45 Business Center",
-        addressLine2: "Block C",
-        district: "Bangalore",
-        state: "Karnataka",
-        pincode: "560001",
-        phone: "9876543211"
-    },
-    {
-        id: 3,
-        name: "Sunrise Traders",
-        invoiceInitial: "SUN",
-        gstn: "07PQRS5432A1Z9",
-        addressLine1: "78 Market Road",
-        addressLine2: "Near Plaza",
-        district: "New Delhi",
-        state: "Delhi",
-        pincode: "110001",
-        phone: "9876543212"
-    },
-];
-
 export default function CompanyPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
     const [activeStep, setActiveStep] = useState(0);
     const router = useRouter();
-
-    const [companies, setCompanies] = useState(mockCompanies);
+ 
+    const [companies, setCompanies] = useState([]);
     const [isInitialized, setIsInitialized] = useState(false);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -93,18 +54,22 @@ export default function CompanyPage() {
         }
     }, [companies, isInitialized]);
 
-    const initialSiteState = {
+    const initialBranchState = {
         name: "", contactPerson: "", addressLine1: "", addressLine2: "",
         state: "", district: "", pincode: "", contactNo: "", alternateNo: "",
         siteType: "", plantType: "", active: true
     };
 
+    const initialBankAccountState = {
+        accountName: "", shortName: "", accountNumber: "", bankName: "",
+        branchName: "", ifscCode: "", openingBalance: "", openingDate: ""
+    };
+
     const initialValues = {
         name: "", invoiceInitial: "", gstn: "", addressLine1: "", addressLine2: "",
         district: "", state: "", pincode: "", phone: "", alternatePhone: "", emailId: "",
-        accountName: "", shortName: "", accountNo: "", bankName: "", branch: "",
-        ifsc: "", openingBalance: "", openingDate: "",
-        sites: []
+        bankAccounts: [],
+        branches: []
     };
 
     const companyValidationSchema = Yup.object({
@@ -117,11 +82,6 @@ export default function CompanyPage() {
         pincode: Yup.string().matches(/^[0-9]{6}$/, "Pincode must be 6 digits").required("Pincode is required"),
         phone: Yup.string().matches(/^[0-9]{10,12}$/, "Phone must be 10-12 digits").required("Phone is required"),
         emailId: Yup.string().email("Invalid email format"),
-        bankName: Yup.string().matches(/^$|^[a-zA-Z\s]*$/, "Bank name should only contain letters"),
-        branch: Yup.string().matches(/^$|^[a-zA-Z\s]*$/, "Branch should only contain letters"),
-        accountNo: Yup.string().matches(/^$|^[0-9]+$/, "Account number must be numeric"),
-        ifsc: Yup.string().matches(/^$|^[A-Z]{4}0[A-Z0-9]{6}$/, "Invalid IFSC code format"),
-        openingBalance: Yup.number().typeError("Opening balance must be a number").nullable(),
     });
 
     const formik = useFormik({
@@ -145,29 +105,29 @@ export default function CompanyPage() {
                     state: values.state,
                     pincode: values.pincode
                 },
-                bankAccounts: values.accountNo ? [{
-                    accountName: values.accountName,
-                    shortName: values.shortName,
-                    accountNumber: values.accountNo,
-                    bankName: values.bankName,
-                    ifscCode: values.ifsc,
-                    branchName: values.branch,
-                    openingBalance: values.openingBalance,
-                    openingDate: values.openingDate
-                }] : [],
-                branches: values.sites.map(s => ({
-                    name: s.name,
-                    siteType: s.siteType || "PRODUCTION",
-                    branchType: s.plantType || "CRUSHER",
-                    phone: s.contactNo,
-                    alternatePhoneNo: s.alternateNo,
-                    emailId: s.emailId || "",
+                bankAccounts: values.bankAccounts.map(b => ({
+                    accountName: b.accountName,
+                    shortName: b.shortName,
+                    accountNumber: b.accountNumber,
+                    bankName: b.bankName,
+                    ifscCode: b.ifscCode,
+                    branchName: b.branchName,
+                    openingBalance: b.openingBalance,
+                    openingDate: b.openingDate
+                })),
+                branches: values.branches.map(b => ({
+                    name: b.name,
+                    siteType: b.siteType || "PRODUCTION",
+                    branchType: b.plantType || "CRUSHER",
+                    phone: b.contactNo,
+                    alternatePhoneNo: b.alternateNo,
+                    emailId: b.emailId || "",
                     address: {
-                        addressLine1: s.addressLine1,
-                        addressLine2: s.addressLine2,
-                        district: s.district,
-                        state: s.state,
-                        pincode: s.pincode
+                        addressLine1: b.addressLine1,
+                        addressLine2: b.addressLine2,
+                        district: b.district,
+                        state: b.state,
+                        pincode: b.pincode
                     }
                 }))
             };
@@ -187,10 +147,15 @@ export default function CompanyPage() {
         },
     });
 
-    const [currentSite, setCurrentSite] = useState(initialSiteState);
-    const [isEditingSite, setIsEditingSite] = useState(false);
-    const [editingSiteIndex, setEditingSiteIndex] = useState(null);
-    const [showSiteForm, setShowSiteForm] = useState(true);
+    const [currentBranch, setCurrentBranch] = useState(initialBranchState);
+    const [isEditingBranch, setIsEditingBranch] = useState(false);
+    const [editingBranchIndex, setEditingBranchIndex] = useState(null);
+    const [showBranchForm, setShowBranchForm] = useState(true);
+
+    const [currentBankAccount, setCurrentBankAccount] = useState(initialBankAccountState);
+    const [isEditingBankAccount, setIsEditingBankAccount] = useState(false);
+    const [editingBankAccountIndex, setEditingBankAccountIndex] = useState(null);
+    const [showBankAccountForm, setShowBankAccountForm] = useState(true);
 
     const [isEditingCompany, setIsEditingCompany] = useState(false);
     const [editingCompanyIndex, setEditingCompanyIndex] = useState(null);
@@ -208,9 +173,12 @@ export default function CompanyPage() {
         setOpenModal(false);
         setActiveStep(0);
         formik.resetForm();
-        setCurrentSite(initialSiteState);
-        setIsEditingSite(false);
-        setShowSiteForm(true);
+        setCurrentBranch(initialBranchState);
+        setIsEditingBranch(false);
+        setShowBranchForm(true);
+        setCurrentBankAccount(initialBankAccountState);
+        setIsEditingBankAccount(false);
+        setShowBankAccountForm(true);
         setIsEditingCompany(false);
         setEditingCompanyIndex(null);
         setShowSuccess(false);
@@ -219,8 +187,8 @@ export default function CompanyPage() {
 
     const handleEditCompany = (index) => {
         const company = companies[index];
-        // Map backend branches back to frontend sites
-        const mappedSites = (company.branches || []).map(b => ({
+
+        const mappedBranches = (company.branches || []).map(b => ({
             name: b.name,
             contactNo: b.phone,
             alternateNo: b.alternatePhoneNo,
@@ -232,6 +200,17 @@ export default function CompanyPage() {
             siteType: b.siteType,
             plantType: b.branchType,
             active: b.active !== false
+        }));
+
+        const mappedBankAccounts = (company.bankAccounts || []).map(b => ({
+            accountName: b.accountName,
+            shortName: b.shortName,
+            accountNumber: b.accountNumber,
+            bankName: b.bankName,
+            ifscCode: b.ifscCode,
+            branchName: b.branchName,
+            openingBalance: b.openingBalance,
+            openingDate: b.openingDate
         }));
 
         formik.setValues({
@@ -246,18 +225,12 @@ export default function CompanyPage() {
             phone: company.phone || "",
             alternatePhone: company.alternatePhoneNo || "",
             emailId: company.emailId || "",
-            accountName: company.bankAccounts?.[0]?.accountName || "",
-            shortName: company.bankAccounts?.[0]?.shortName || "",
-            accountNo: company.bankAccounts?.[0]?.accountNo || "",
-            bankName: company.bankAccounts?.[0]?.bankName || "",
-            branch: company.bankAccounts?.[0]?.branch || "",
-            ifsc: company.bankAccounts?.[0]?.ifsc || "",
-            openingBalance: company.bankAccounts?.[0]?.openingBalance || "",
-            openingDate: company.bankAccounts?.[0]?.openingDate || "",
-            sites: mappedSites
+            bankAccounts: mappedBankAccounts,
+            branches: mappedBranches
         });
 
-        setShowSiteForm(mappedSites.length > 0 ? false : true);
+        setShowBranchForm(mappedBranches.length > 0 ? false : true);
+        setShowBankAccountForm(mappedBankAccounts.length > 0 ? false : true);
         setEditingCompanyIndex(index);
         setIsEditingCompany(true);
         setOpenModal(true);
@@ -312,44 +285,73 @@ export default function CompanyPage() {
     };
     const handleBack = () => setActiveStep((prev) => prev - 1);
 
-    const handleAddSite = () => {
-        if (!currentSite.name || !currentSite.plantType || !currentSite.contactNo || !currentSite.addressLine1 || !currentSite.district || !currentSite.state || !currentSite.pincode) {
-            alert("Please fill in the required fields: Site Name, Plant Type, Contact No, Address Line 1, District, State, and Pincode.");
+    const handleAddBranch = () => {
+        if (!currentBranch.name || !currentBranch.plantType || !currentBranch.contactNo || !currentBranch.addressLine1 || !currentBranch.district || !currentBranch.state || !currentBranch.pincode) {
+            alert("Please fill in the required fields: Branch Name, Plant Type, Contact No, Address Line 1, District, State, and Pincode.");
             return;
         }
-        if (!/^[0-9]{10,12}$/.test(currentSite.contactNo)) {
+        if (!/^[0-9]{10,12}$/.test(currentBranch.contactNo)) {
             alert("Contact No must be 10 to 12 digits.");
             return;
         }
-        if (!/^[0-9]{6}$/.test(currentSite.pincode)) {
+        if (!/^[0-9]{6}$/.test(currentBranch.pincode)) {
             alert("Pincode must be exactly 6 digits.");
             return;
         }
 
-        const newSites = [...formik.values.sites];
-        if (editingSiteIndex !== null) {
-            newSites[editingSiteIndex] = currentSite;
-            setEditingSiteIndex(null);
+        const newBranches = [...formik.values.branches];
+        if (editingBranchIndex !== null) {
+            newBranches[editingBranchIndex] = currentBranch;
+            setEditingBranchIndex(null);
         } else {
-            newSites.push(currentSite);
+            newBranches.push(currentBranch);
         }
-        formik.setFieldValue("sites", newSites);
-        setCurrentSite(initialSiteState);
-        setShowSiteForm(false);
+        formik.setFieldValue("branches", newBranches);
+        setCurrentBranch(initialBranchState);
+        setShowBranchForm(false);
     };
 
-    const handleEditSite = (index) => {
-        setCurrentSite(formik.values.sites[index]);
-        setEditingSiteIndex(index);
-        setShowSiteForm(true);
+    const handleEditBranch = (index) => {
+        setCurrentBranch(formik.values.branches[index]);
+        setEditingBranchIndex(index);
+        setShowBranchForm(true);
     };
 
-    const handleDeleteSite = (index) => {
-        const newSites = formik.values.sites.filter((_, i) => i !== index);
-        formik.setFieldValue("sites", newSites);
+    const handleDeleteBranch = (index) => {
+        const newBranches = formik.values.branches.filter((_, i) => i !== index);
+        formik.setFieldValue("branches", newBranches);
     };
 
-    const steps = ["Basic Company Details", "Site Details", "Bank Details"];
+    const handleAddBankAccount = () => {
+        if (!currentBankAccount.accountName || !currentBankAccount.accountNumber || !currentBankAccount.bankName || !currentBankAccount.ifscCode) {
+            alert("Please fill in the required fields: Account Name, Account No, Bank Name, and IFSC.");
+            return;
+        }
+
+        const newBankAccounts = [...formik.values.bankAccounts];
+        if (editingBankAccountIndex !== null) {
+            newBankAccounts[editingBankAccountIndex] = currentBankAccount;
+            setEditingBankAccountIndex(null);
+        } else {
+            newBankAccounts.push(currentBankAccount);
+        }
+        formik.setFieldValue("bankAccounts", newBankAccounts);
+        setCurrentBankAccount(initialBankAccountState);
+        setShowBankAccountForm(false);
+    };
+
+    const handleEditBankAccount = (index) => {
+        setCurrentBankAccount(formik.values.bankAccounts[index]);
+        setEditingBankAccountIndex(index);
+        setShowBankAccountForm(true);
+    };
+
+    const handleDeleteBankAccount = (index) => {
+        const newBankAccounts = formik.values.bankAccounts.filter((_, i) => i !== index);
+        formik.setFieldValue("bankAccounts", newBankAccounts);
+    };
+
+    const steps = ["Basic Company Details", "Branch Details", "Bank Details"];
 
     const renderStepper = () => {
         if (showSuccess) return null;
@@ -439,10 +441,10 @@ export default function CompanyPage() {
                         sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
                     >
                         <MenuItem value="">{placeholder}</MenuItem>
-                        {label.includes("Site Type") ? [
+                        {label.includes("Branch Category") || label.includes("Site Type") ? [
                             <MenuItem key="OFFICE" value="OFFICE">OFFICE</MenuItem>,
                             <MenuItem key="PRODUCTION" value="PRODUCTION">PRODUCTION</MenuItem>
-                        ] : label.includes("Plant Type") ? [
+                        ] : label.includes("Plant Type") || label.includes("Branch Type") ? [
                             <MenuItem key="CRUSHER" value="CRUSHER">CRUSHER</MenuItem>,
                             <MenuItem key="YARD" value="YARD">YARD</MenuItem>,
                             <MenuItem key="QUARRY" value="QUARRY">QUARRY</MenuItem>,
@@ -478,8 +480,8 @@ export default function CompanyPage() {
         );
     };
 
-    // Helper for rendering site form fields (not in formik yet)
-    const renderSiteField = (label, placeholder, isSelect = false, type = "text", value = "", onChange = () => { }) => {
+    // Helper for rendering entry form fields
+    const renderEntryField = (label, placeholder, isSelect = false, type = "text", value = "", onChange = () => { }) => {
         if (type === "switch") {
             return (
                 <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
@@ -508,7 +510,7 @@ export default function CompanyPage() {
                         sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
                     >
                         <MenuItem value="">{placeholder}</MenuItem>
-                        {label.includes("Site Type") ? [
+                        {label.includes("Site Type") || label.includes("Branch Type") ? [
                             <MenuItem key="OFFICE" value="OFFICE">OFFICE</MenuItem>,
                             <MenuItem key="PRODUCTION" value="PRODUCTION">PRODUCTION</MenuItem>
                         ] : label.includes("Plant Type") ? [
@@ -521,6 +523,7 @@ export default function CompanyPage() {
                 ) : (
                     <TextField
                         fullWidth size="small"
+                        type={type}
                         placeholder={placeholder}
                         value={value}
                         onChange={(e) => onChange(e.target.value)}
@@ -580,72 +583,72 @@ export default function CompanyPage() {
             case 1:
                 return (
                     <Box>
-                        {showSiteForm ? (
+                        {showBranchForm ? (
                             <Box sx={{
                                 mb: 6, p: 3, border: '1px solid #F3F4F6',
                                 borderRadius: '16px', backgroundColor: '#fff',
                                 boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
                             }}>
                                 <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 3, color: '#111827' }}>
-                                    {editingSiteIndex !== null ? "Edit Site Details" : "Enter Site Details"}
+                                    {editingBranchIndex !== null ? "Edit Branch Details" : "Enter Branch Details"}
                                 </Typography>
                                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Site Name *", "Enter site name", false, "text", currentSite.name, (v) => setCurrentSite({ ...currentSite, name: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Address Line 1", "Enter address line 1", false, "text", currentSite.addressLine1, (v) => setCurrentSite({ ...currentSite, addressLine1: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Address Line 2", "Enter address line 2", false, "text", currentSite.addressLine2, (v) => setCurrentSite({ ...currentSite, addressLine2: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("State", "Enter state", false, "text", currentSite.state, (v) => setCurrentSite({ ...currentSite, state: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("District", "Enter district", false, "text", currentSite.district, (v) => setCurrentSite({ ...currentSite, district: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Pincode", "Enter pincode", false, "text", currentSite.pincode, (v) => setCurrentSite({ ...currentSite, pincode: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Contact No", "Enter contact no", false, "text", currentSite.contactNo, (v) => setCurrentSite({ ...currentSite, contactNo: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Alternate No", "Enter alternate no", false, "text", currentSite.alternateNo, (v) => setCurrentSite({ ...currentSite, alternateNo: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Site Type", "Select site type", true, "text", currentSite.siteType, (v) => setCurrentSite({ ...currentSite, siteType: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderSiteField("Plant Type *", "Select plant type", true, "text", currentSite.plantType, (v) => setCurrentSite({ ...currentSite, plantType: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Branch Name *", "Enter branch name", false, "text", currentBranch.name, (v) => setCurrentBranch({ ...currentBranch, name: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Address Line 1", "Enter address line 1", false, "text", currentBranch.addressLine1, (v) => setCurrentBranch({ ...currentBranch, addressLine1: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Address Line 2", "Enter address line 2", false, "text", currentBranch.addressLine2, (v) => setCurrentBranch({ ...currentBranch, addressLine2: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("State", "Enter state", false, "text", currentBranch.state, (v) => setCurrentBranch({ ...currentBranch, state: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("District", "Enter district", false, "text", currentBranch.district, (v) => setCurrentBranch({ ...currentBranch, district: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Pincode", "Enter pincode", false, "text", currentBranch.pincode, (v) => setCurrentBranch({ ...currentBranch, pincode: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Contact No", "Enter contact no", false, "text", currentBranch.contactNo, (v) => setCurrentBranch({ ...currentBranch, contactNo: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Alternate No", "Enter alternate no", false, "text", currentBranch.alternateNo, (v) => setCurrentBranch({ ...currentBranch, alternateNo: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Branch Category", "Select category", true, "text", currentBranch.siteType, (v) => setCurrentBranch({ ...currentBranch, siteType: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Branch Type *", "Select branch type", true, "text", currentBranch.plantType, (v) => setCurrentBranch({ ...currentBranch, plantType: v }))}</Box>
                                     <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', pb: 1 }}>
-                                        {renderSiteField("Active", "", false, "switch", currentSite.active, (v) => setCurrentSite({ ...currentSite, active: v }))}
+                                        {renderEntryField("Active", "", false, "switch", currentBranch.active, (v) => setCurrentBranch({ ...currentBranch, active: v }))}
                                     </Box>
                                     <Box sx={{ width: '100%', display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 1 }}>
                                         <Button
                                             variant="outlined"
-                                            onClick={() => { setShowSiteForm(false); setCurrentSite(initialSiteState); setEditingSiteIndex(null); }}
+                                            onClick={() => { setShowBranchForm(false); setCurrentBranch(initialBranchState); setEditingBranchIndex(null); }}
                                             sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 600, color: '#6B7280', border: '1px solid #E5E7EB' }}
                                         >
                                             Cancel
                                         </Button>
                                         <Button
                                             variant="contained"
-                                            onClick={handleAddSite}
+                                            onClick={handleAddBranch}
                                             sx={{ borderRadius: '10px', px: 4, textTransform: 'none', fontWeight: 600, backgroundColor: '#0057FF' }}
                                         >
-                                            {editingSiteIndex !== null ? "Update Site" : "Add to List"}
+                                            {editingBranchIndex !== null ? "Update Branch" : "Add to List"}
                                         </Button>
                                     </Box>
                                 </Box>
                             </Box>
                         ) : (
-                            <Box sx={{ display: 'flex', justifyContent: formik.values.sites.length > 0 ? 'flex-end' : 'center', mb: 3 }}>
+                            <Box sx={{ display: 'flex', justifyContent: formik.values.branches.length > 0 ? 'flex-end' : 'center', mb: 3 }}>
                                 <Button
                                     startIcon={<AddIcon />}
                                     variant="contained"
-                                    onClick={() => { setShowSiteForm(true); setEditingSiteIndex(null); setCurrentSite(initialSiteState); }}
+                                    onClick={() => { setShowBranchForm(true); setEditingBranchIndex(null); setCurrentBranch(initialBranchState); }}
                                     sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 600, backgroundColor: '#0057FF', fontSize: '13px', px: 4, py: 1.5 }}
                                 >
-                                    Add New Site
+                                    Add New Branch
                                 </Button>
                             </Box>
                         )}
 
-                        {formik.values.sites.length > 0 && (
+                        {formik.values.branches.length > 0 && (
                             <Box>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                                     <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#111827' }}>
-                                        Registered Sites ({formik.values.sites.length})
+                                        Registered Branches ({formik.values.branches.length})
                                     </Typography>
                                 </Box>
                                 <TableContainer sx={{ border: '1px solid #F3F4F6', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#FFFFFF' }}>
                                     <Table size="small">
                                         <TableHead sx={{ backgroundColor: '#F9FAFB' }}>
                                             <TableRow>
-                                                <TableCell sx={{ fontWeight: 600, color: '#374151', py: 1.5 }}>Site Name</TableCell>
+                                                <TableCell sx={{ fontWeight: 600, color: '#374151', py: 1.5 }}>Branch Name</TableCell>
                                                 <TableCell sx={{ fontWeight: 600, color: '#374151' }}>Contact No</TableCell>
                                                 <TableCell sx={{ fontWeight: 600, color: '#374151' }}>District</TableCell>
                                                 <TableCell sx={{ fontWeight: 600, color: '#374151' }}>Status</TableCell>
@@ -653,26 +656,26 @@ export default function CompanyPage() {
                                             </TableRow>
                                         </TableHead>
                                         <TableBody>
-                                            {formik.values.sites.map((site, index) => (
+                                            {formik.values.branches.map((branch, index) => (
                                                 <TableRow key={index} sx={{ '&:hover': { backgroundColor: '#F9FAFB' } }}>
-                                                    <TableCell sx={{ color: '#111827', fontWeight: 500 }}>{site.name}</TableCell>
-                                                    <TableCell sx={{ color: '#4B5563' }}>{site.contactNo}</TableCell>
-                                                    <TableCell sx={{ color: '#4B5563' }}>{site.district}</TableCell>
+                                                    <TableCell sx={{ color: '#111827', fontWeight: 500 }}>{branch.name}</TableCell>
+                                                    <TableCell sx={{ color: '#4B5563' }}>{branch.contactNo}</TableCell>
+                                                    <TableCell sx={{ color: '#4B5563' }}>{branch.district}</TableCell>
                                                     <TableCell>
                                                         <Box sx={{
                                                             display: 'inline-flex', px: 1, py: 0.5, borderRadius: '6px',
                                                             fontSize: '11px', fontWeight: 600,
-                                                            backgroundColor: site.active ? '#ECFDF5' : '#FEF2F2',
-                                                            color: site.active ? '#059669' : '#DC2626'
+                                                            backgroundColor: branch.active ? '#ECFDF5' : '#FEF2F2',
+                                                            color: branch.active ? '#059669' : '#DC2626'
                                                         }}>
-                                                            {site.active ? 'Active' : 'Inactive'}
+                                                            {branch.active ? 'Active' : 'Inactive'}
                                                         </Box>
                                                     </TableCell>
                                                     <TableCell align="right">
-                                                        <IconButton size="small" onClick={() => handleEditSite(index)} sx={{ color: '#0057FF', mr: 1 }}>
+                                                        <IconButton size="small" onClick={() => handleEditBranch(index)} sx={{ color: '#0057FF', mr: 1 }}>
                                                             <EditIcon fontSize="small" />
                                                         </IconButton>
-                                                        <IconButton size="small" onClick={() => handleDeleteSite(index)} sx={{ color: '#EF4444' }}>
+                                                        <IconButton size="small" onClick={() => handleDeleteBranch(index)} sx={{ color: '#EF4444' }}>
                                                             <DeleteIcon fontSize="small" />
                                                         </IconButton>
                                                     </TableCell>
@@ -687,15 +690,95 @@ export default function CompanyPage() {
                 );
             case 2:
                 return (
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
-                        <Box sx={{ width: itemWidth }}>{renderField("accountName", "Account Name", "Enter account name")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("shortName", "Short Name", "Enter short name")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("accountNo", "Account No", "Enter account no")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("bankName", "Bank Name", "Enter bank name")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("branch", "Branch", "Enter branch")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("ifsc", "IFSC", "Enter IFSC")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("openingBalance", "Opening Balance", "Enter opening balance")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("openingDate", "Opening Date", "dd-mm-yyyy", false, "date")}</Box>
+                    <Box>
+                        {showBankAccountForm ? (
+                            <Box sx={{
+                                mb: 6, p: 3, border: '1px solid #F3F4F6',
+                                borderRadius: '16px', backgroundColor: '#fff',
+                                boxShadow: '0 2px 10px rgba(0,0,0,0.02)'
+                            }}>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 3, color: '#111827' }}>
+                                    {editingBankAccountIndex !== null ? "Edit Bank Account" : "Enter Bank Details"}
+                                </Typography>
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Account Name *", "Enter account name", false, "text", currentBankAccount.accountName, (v) => setCurrentBankAccount({ ...currentBankAccount, accountName: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Short Name", "Enter short name", false, "text", currentBankAccount.shortName, (v) => setCurrentBankAccount({ ...currentBankAccount, shortName: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Account No *", "Enter account no", false, "text", currentBankAccount.accountNumber, (v) => setCurrentBankAccount({ ...currentBankAccount, accountNumber: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Bank Name *", "Enter bank name", false, "text", currentBankAccount.bankName, (v) => setCurrentBankAccount({ ...currentBankAccount, bankName: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Branch", "Enter branch", false, "text", currentBankAccount.branchName, (v) => setCurrentBankAccount({ ...currentBankAccount, branchName: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("IFSC *", "Enter IFSC", false, "text", currentBankAccount.ifscCode, (v) => setCurrentBankAccount({ ...currentBankAccount, ifscCode: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Opening Balance", "Enter balance", false, "text", currentBankAccount.openingBalance, (v) => setCurrentBankAccount({ ...currentBankAccount, openingBalance: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Opening Date", "dd-mm-yyyy", false, "date", currentBankAccount.openingDate, (v) => setCurrentBankAccount({ ...currentBankAccount, openingDate: v }))}</Box>
+
+                                    <Box sx={{ width: '100%', display: 'flex', justifyContent: 'flex-end', gap: 2, mt: 1 }}>
+                                        <Button
+                                            variant="outlined"
+                                            onClick={() => { setShowBankAccountForm(false); setCurrentBankAccount(initialBankAccountState); setEditingBankAccountIndex(null); }}
+                                            sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 600, color: '#6B7280', border: '1px solid #E5E7EB' }}
+                                        >
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            variant="contained"
+                                            onClick={handleAddBankAccount}
+                                            sx={{ borderRadius: '10px', px: 4, textTransform: 'none', fontWeight: 600, backgroundColor: '#0057FF' }}
+                                        >
+                                            {editingBankAccountIndex !== null ? "Update Bank" : "Add to List"}
+                                        </Button>
+                                    </Box>
+                                </Box>
+                            </Box>
+                        ) : (
+                            <Box sx={{ display: 'flex', justifyContent: formik.values.bankAccounts.length > 0 ? 'flex-end' : 'center', mb: 3 }}>
+                                <Button
+                                    startIcon={<AddIcon />}
+                                    variant="contained"
+                                    onClick={() => { setShowBankAccountForm(true); setEditingBankAccountIndex(null); setCurrentBankAccount(initialBankAccountState); }}
+                                    sx={{ borderRadius: '10px', textTransform: 'none', fontWeight: 600, backgroundColor: '#0057FF', fontSize: '13px', px: 4, py: 1.5 }}
+                                >
+                                    Add New Bank
+                                </Button>
+                            </Box>
+                        )}
+
+                        {formik.values.bankAccounts.length > 0 && (
+                            <Box>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#111827' }}>
+                                        Registered Accounts ({formik.values.bankAccounts.length})
+                                    </Typography>
+                                </Box>
+                                <TableContainer sx={{ border: '1px solid #F3F4F6', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#FFFFFF' }}>
+                                    <Table size="small">
+                                        <TableHead sx={{ backgroundColor: '#F9FAFB' }}>
+                                            <TableRow>
+                                                <TableCell sx={{ fontWeight: 600, color: '#374151', py: 1.5 }}>Account No</TableCell>
+                                                <TableCell sx={{ fontWeight: 600, color: '#374151' }}>Bank Name</TableCell>
+                                                <TableCell sx={{ fontWeight: 600, color: '#374151' }}>IFSC</TableCell>
+                                                <TableCell align="right" sx={{ fontWeight: 600, color: '#374151' }}>Actions</TableCell>
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {formik.values.bankAccounts.map((account, index) => (
+                                                <TableRow key={index} sx={{ '&:hover': { backgroundColor: '#F9FAFB' } }}>
+                                                    <TableCell sx={{ color: '#111827', fontWeight: 500 }}>{account.accountNumber}</TableCell>
+                                                    <TableCell sx={{ color: '#4B5563' }}>{account.bankName}</TableCell>
+                                                    <TableCell sx={{ color: '#4B5563' }}>{account.ifscCode}</TableCell>
+                                                    <TableCell align="right">
+                                                        <IconButton size="small" onClick={() => handleEditBankAccount(index)} sx={{ color: '#0057FF', mr: 1 }}>
+                                                            <EditIcon fontSize="small" />
+                                                        </IconButton>
+                                                        <IconButton size="small" onClick={() => handleDeleteBankAccount(index)} sx={{ color: '#EF4444' }}>
+                                                            <DeleteIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            </Box>
+                        )}
                     </Box>
                 );
             default: return null;
@@ -768,7 +851,7 @@ export default function CompanyPage() {
                 </Box>
             </Box>
 
-            {/* Table Section */}
+            {/* Company Table Section */}
             <Card sx={{
                 borderRadius: "16px",
                 boxShadow: "0 4px 24px rgba(0,0,0,0.04)",
@@ -912,7 +995,10 @@ export default function CompanyPage() {
                                 <Button
                                     variant="contained"
                                     onClick={activeStep < 2 ? handleNext : formik.handleSubmit}
-                                    disabled={activeStep === 1 && showSiteForm && formik.values.sites.length === 0}
+                                    disabled={
+                                        (activeStep === 1 && showBranchForm && formik.values.branches.length === 0) ||
+                                        (activeStep === 2 && showBankAccountForm && formik.values.bankAccounts.length === 0)
+                                    }
                                     sx={{
                                         backgroundColor: '#2D3FE2',
                                         borderRadius: '12px',

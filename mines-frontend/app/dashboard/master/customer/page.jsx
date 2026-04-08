@@ -4,7 +4,7 @@ import React from "react";
 import { Box, Typography, Card, CardContent } from "@mui/material";
 import { palette } from "@/theme";
 
-export default function EmployeePage() {
+export default function CustomerPage() {
     return (
         <Box sx={{ animation: "fadeIn 0.5s ease-out" }}>
             <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: palette.text.primary }}>

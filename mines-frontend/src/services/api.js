@@ -35,7 +35,7 @@ export const productApi = {
     const response = await api.get("/products");
     return response.data;
   },
-  
+
   upsert: async (productData, id = null) => {
     const params = id ? { id } : {};
     const response = await api.post("/products/upsert", productData, { params });
@@ -49,6 +49,38 @@ export const productApi = {
 
   getByCompany: async (companyId) => {
     const response = await api.get(`/products/company/${companyId}`);
+    return response.data;
+  }
+};
+
+export const employeeApi = {
+  getAll: async () => {
+    const response = await api.get("/employees");
+    return response.data;
+  },
+
+  upsert: async (employeeData, files = {}) => {
+    const formData = new FormData();
+
+    // The JSON part
+    formData.append("employee", JSON.stringify(employeeData));
+
+    // The file parts
+    if (files.passbook) formData.append("passbook", files.passbook);
+    if (files.aadhaar) formData.append("aadhaar", files.aadhaar);
+    if (files.pan) formData.append("pan", files.pan);
+    if (files.drivingLicense) formData.append("drivingLicense", files.drivingLicense);
+
+    const response = await api.post("/employees/upsert", formData, {
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return response.data;
+  },
+
+  delete: async (id) => {
+    const response = await api.delete(`/employees/${id}`);
     return response.data;
   }
 };
