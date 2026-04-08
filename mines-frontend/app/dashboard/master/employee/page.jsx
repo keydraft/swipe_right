@@ -33,7 +33,7 @@ export default function EmployeePage() {
     const [roles, setRoles] = useState([]);
     const [companies, setCompanies] = useState([]);
     const [availableBranches, setAvailableBranches] = useState([]);
-    const [currentUserRank, setCurrentUserRank] = useState(0); 
+    const [currentUserRank, setCurrentUserRank] = useState(0);
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [isEditing, setIsEditing] = useState(false);
@@ -44,7 +44,7 @@ export default function EmployeePage() {
         setRowsPerPage(parseInt(event.target.value, 10));
         setPage(0);
     };
-    
+
     // File state
     const [files, setFiles] = useState({
         passbook: null,
@@ -80,12 +80,12 @@ export default function EmployeePage() {
         district: Yup.string().required("District is required"),
         state: Yup.string().required("State is required"),
         username: Yup.string().required("Username is required"),
-        password: isEditing 
-            ? Yup.string().min(6, "Password must be at least 6 characters") 
+        password: isEditing
+            ? Yup.string().min(6, "Password must be at least 6 characters")
             : Yup.string().min(6, "Password must be at least 6 characters").required("Password is required"),
         dateOfBirth: Yup.string().required("Date of Birth is required"),
         dateOfJoining: Yup.string().required("Date of Joining is required"),
-        
+
         // Optional but validated if provided
         salaryType: Yup.string().required("Salary type is required"),
         basicSalary: Yup.number().typeError("Basic salary must be a number").required("Basic salary is required"),
@@ -103,7 +103,7 @@ export default function EmployeePage() {
                 adminApi.getRoles(),
                 adminApi.getCompanies()
             ]);
-            
+
             if (empResp.success) setEmployees(empResp.data);
             if (roleResp.success) setRoles(roleResp.data);
             if (compResp.success) setCompanies(compResp.data);
@@ -144,14 +144,14 @@ export default function EmployeePage() {
                 if (isEditing && !values.password) {
                     delete payload.password;
                 }
-                
+
                 const response = await employeeApi.upsert(payload, files);
                 if (response.success) {
                     setShowSuccess(true);
                     // Refresh data
                     const listResp = await employeeApi.getAll();
                     if (listResp.success) setEmployees(listResp.data);
-                    
+
                     setTimeout(() => {
                         handleCloseModal();
                         fetchInitialData();
@@ -190,7 +190,7 @@ export default function EmployeePage() {
     const handleEditEmployee = (employee) => {
         setIsEditing(true);
         setEditingId(employee.id);
-        
+
         console.log("Mapping employee for edit:", employee);
 
         formik.setValues({
@@ -220,7 +220,7 @@ export default function EmployeePage() {
             panNumber: (employee.panNumber || "").toUpperCase(),
             drivingLicenseNumber: (employee.drivingLicenseNumber || "").toUpperCase()
         });
-        
+
         setFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
         setOpenModal(true);
         setShowSuccess(false);
@@ -289,9 +289,9 @@ export default function EmployeePage() {
             const errors = formik.errors;
             // Aadhaar and PAN are required documents
             const docsUploaded = !!files.aadhaar && !!files.pan;
-            return requiredStep1Fields.every(field => !!formik.values[field]) && 
-                   !requiredStep1Fields.some(field => !!errors[field]) && 
-                   docsUploaded;
+            return requiredStep1Fields.every(field => !!formik.values[field]) &&
+                !requiredStep1Fields.some(field => !!errors[field]) &&
+                docsUploaded;
         }
         if (activeStep === 2) {
             return !!formik.values.username && !!formik.values.password && !formik.errors.username && !formik.errors.password;
@@ -459,8 +459,8 @@ export default function EmployeePage() {
                     fullWidth
                     startIcon={<UploadIcon />}
                     sx={{
-                        background: files[field] 
-                            ? 'linear-gradient(135deg, #10B981 0%, #059669 100%)' 
+                        background: files[field]
+                            ? 'linear-gradient(135deg, #10B981 0%, #059669 100%)'
                             : 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
                         borderRadius: '8px',
                         textTransform: 'none',
@@ -571,7 +571,7 @@ export default function EmployeePage() {
         }
     };
 
-    const filteredEmployees = employees.filter(employee => 
+    const filteredEmployees = employees.filter(employee =>
         (employee.firstName + " " + employee.lastName).toLowerCase().includes(searchQuery.toLowerCase()) ||
         employee.designation?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         employee.phone?.includes(searchQuery)
@@ -668,41 +668,41 @@ export default function EmployeePage() {
                                 .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                                 .map((employee) => (
                                     <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
-                                    <TableCell sx={{ fontSize: '12px', color: palette.text.secondary }}>{employee.id.substring(0, 8)}...</TableCell>
-                                    <TableCell>{employee.firstName}</TableCell>
-                                    <TableCell>{employee.lastName}</TableCell>
-                                    <TableCell>{employee.designation}</TableCell>
-                                    <TableCell>{employee.phone}</TableCell>
-                                    <TableCell>{employee.address?.pincode}</TableCell>
-                                    <TableCell align="center">
-                                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                                            <Tooltip title="View">
-                                                <IconButton size="small" sx={{ color: palette.primary.main }}>
-                                                    <ViewIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title="Edit">
-                                                <IconButton 
-                                                    size="small" 
-                                                    sx={{ color: '#0057FF' }}
-                                                    onClick={() => handleEditEmployee(employee)}
-                                                >
-                                                    <EditIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title="Delete">
-                                                <IconButton 
-                                                    size="small" 
-                                                    sx={{ color: '#EF4444' }}
-                                                    onClick={() => handleDeleteEmployee(employee.id)}
-                                                >
-                                                    <DeleteIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                        </Box>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
+                                        <TableCell sx={{ fontSize: '12px', color: palette.text.secondary }}>{employee.id.substring(0, 8)}...</TableCell>
+                                        <TableCell>{employee.firstName}</TableCell>
+                                        <TableCell>{employee.lastName}</TableCell>
+                                        <TableCell>{employee.designation}</TableCell>
+                                        <TableCell>{employee.phone}</TableCell>
+                                        <TableCell>{employee.address?.pincode}</TableCell>
+                                        <TableCell align="center">
+                                            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                                                <Tooltip title="View">
+                                                    <IconButton size="small" sx={{ color: palette.primary.main }}>
+                                                        <ViewIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Edit">
+                                                    <IconButton
+                                                        size="small"
+                                                        sx={{ color: '#0057FF' }}
+                                                        onClick={() => handleEditEmployee(employee)}
+                                                    >
+                                                        <EditIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                                <Tooltip title="Delete">
+                                                    <IconButton
+                                                        size="small"
+                                                        sx={{ color: '#EF4444' }}
+                                                        onClick={() => handleDeleteEmployee(employee.id)}
+                                                    >
+                                                        <DeleteIcon fontSize="small" />
+                                                    </IconButton>
+                                                </Tooltip>
+                                            </Box>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
                             {filteredEmployees.length === 0 && (
                                 <TableRow>
                                     <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
