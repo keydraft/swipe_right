@@ -42,7 +42,8 @@ public class EmployeeService {
     }
 
     private AddressResponse mapAddressResponse(Address address) {
-        if (address == null) return null;
+        if (address == null)
+            return null;
         return AddressResponse.builder()
                 .id(address.getId())
                 .addressLine1(address.getAddressLine1())
@@ -68,23 +69,27 @@ public class EmployeeService {
                 .address(mapAddressResponse(em.getAddress()))
                 .designation(em.getDesignation() != null ? em.getDesignation().getName() : "N/A")
                 .department(em.getBranch() != null ? em.getBranch().getName() : "-")
-                
+
                 .panNumber(em.getPanNumber())
                 .aadhaarNumber(em.getAadhaarNumber())
                 .drivingLicenseNumber(em.getDrivingLicenseNumber())
-                
+
                 .salaryType(em.getSalaryType())
                 .basicSalary(em.getBasicSalary())
                 .bankAccountHolderName(em.getBankAccountHolderName())
                 .bankName(em.getBankName())
                 .bankAccountNumber(em.getBankAccountNumber())
                 .ifscCode(em.getIfscCode())
-                
+
                 .username(em.getUser() != null ? em.getUser().getUsername() : null)
                 .branchId(em.getBranch() != null ? em.getBranch().getId() : null)
                 .branchName(em.getBranch() != null ? em.getBranch().getName() : "-")
                 .companyName(em.getBranch() != null ? em.getBranch().getCompany().getName() : "-")
-                .active(em.isActive());
+                .active(em.isActive())
+                .passbookFilePath(em.getPassbookFilePath())
+                .aadhaarFilePath(em.getAadhaarFilePath())
+                .panFilePath(em.getPanFilePath())
+                .drivingLicenseFilePath(em.getDrivingLicenseFilePath());
 
         if (em.getUser() != null) {
             builder.companyIds(userCompanyRepository.findByUser(em.getUser()).stream()
@@ -94,7 +99,7 @@ public class EmployeeService {
                 builder.companyId(em.getBranch().getCompany().getId());
             }
         }
-        
+
         return builder.build();
     }
 
@@ -104,8 +109,11 @@ public class EmployeeService {
             code = "SYS" + String.format("%03d", employeeRepository.count() + 1);
         } else {
             Company co = br.getCompany();
-            String coPart = (co.getInvoiceInitial() != null ? co.getInvoiceInitial() : co.getName().substring(0, Math.min(3, co.getName().length()))).toUpperCase().replaceAll("[^A-Z0-9]", "");
-            String brPart = br.getName().toUpperCase().replaceAll("[^A-Z0-9]", "").substring(0, Math.min(3, br.getName().length()));
+            String coPart = (co.getInvoiceInitial() != null ? co.getInvoiceInitial()
+                    : co.getName().substring(0, Math.min(3, co.getName().length()))).toUpperCase()
+                    .replaceAll("[^A-Z0-9]", "");
+            String brPart = br.getName().toUpperCase().replaceAll("[^A-Z0-9]", "").substring(0,
+                    Math.min(3, br.getName().length()));
             String seqPart = String.format("%03d", employeeRepository.countByBranch(br) + 1);
             code = coPart + brPart + seqPart;
         }
@@ -120,20 +128,21 @@ public class EmployeeService {
             MultipartFile aadhaar,
             MultipartFile pan,
             MultipartFile dl) {
-        
+
         log.info("Starting upsert for employee: {} {}", req.getFirstName(), req.getLastName());
         Employee emp = req.getId() != null ? employeeRepository.findById(req.getId()).orElseThrow() : new Employee();
 
         emp.setFirstName(req.getFirstName());
         emp.setLastName(req.getLastName());
-        
+
         // Fix for Gender enum mismatch (others -> OTHERS vs OTHER)
         if (req.getGender() != null) {
             String genderStr = req.getGender().toUpperCase();
-            if ("OTHERS".equals(genderStr)) genderStr = "OTHER";
+            if ("OTHERS".equals(genderStr))
+                genderStr = "OTHER";
             emp.setGender(Gender.valueOf(genderStr));
         }
-        
+
         emp.setDateOfBirth(req.getDateOfBirth());
         emp.setDateOfJoining(req.getDateOfJoining());
         emp.setContactNumber(req.getContactNumber());
@@ -157,10 +166,14 @@ public class EmployeeService {
         emp.setIfscCode(req.getIfscCode());
 
         // --- FILE STORAGE (LOCAL) ---
-        if (passbook != null) emp.setPassbookFilePath(fileStorageService.storeFile(passbook));
-        if (aadhaar != null) emp.setAadhaarFilePath(fileStorageService.storeFile(aadhaar));
-        if (pan != null) emp.setPanFilePath(fileStorageService.storeFile(pan));
-        if (dl != null) emp.setDrivingLicenseFilePath(fileStorageService.storeFile(dl));
+        if (passbook != null)
+            emp.setPassbookFilePath(fileStorageService.storeFile(passbook));
+        if (aadhaar != null)
+            emp.setAadhaarFilePath(fileStorageService.storeFile(aadhaar));
+        if (pan != null)
+            emp.setPanFilePath(fileStorageService.storeFile(pan));
+        if (dl != null)
+            emp.setDrivingLicenseFilePath(fileStorageService.storeFile(dl));
 
         emp.setAadhaarNumber(req.getAadhaarNumber());
         emp.setPanNumber(req.getPanNumber());
@@ -187,24 +200,26 @@ public class EmployeeService {
         if (req.getUsername() != null && !req.getUsername().trim().isEmpty()) {
             User user = emp.getUser() != null ? emp.getUser() : new User();
             user.setUsername(req.getUsername());
-            
+
             // If new user or password provided, set password
             if (emp.getUser() == null || (req.getPassword() != null && !req.getPassword().trim().isEmpty())) {
-                String plainPassword = (req.getPassword() != null && !req.getPassword().trim().isEmpty()) 
-                                        ? req.getPassword() 
-                                        : generateTempPassword();
-                
-                log.info("USER ACCOUNT CREATED/UPDATED: [Username: {}] [Temp Password: {}]", req.getUsername(), plainPassword);
+                String plainPassword = (req.getPassword() != null && !req.getPassword().trim().isEmpty())
+                        ? req.getPassword()
+                        : generateTempPassword();
+
+                log.info("USER ACCOUNT CREATED/UPDATED: [Username: {}] [Temp Password: {}]", req.getUsername(),
+                        plainPassword);
                 user.setPassword(passwordEncoder.encode(plainPassword));
                 user.setPasswordResetRequired(true); // Force change on first login
             }
-            
+
             if (roleObj != null) {
                 user.setRole(roleObj);
             } else {
-                throw new RuntimeException("Cannot create user account: Role '" + req.getRole() + "' not found in system.");
+                throw new RuntimeException(
+                        "Cannot create user account: Role '" + req.getRole() + "' not found in system.");
             }
-            
+
             user = userRepository.save(user);
             emp.setUser(user);
 

@@ -62,7 +62,11 @@ export default function LoginForm() {
                     // 3. Update CASL ability
                     ability.update(defineAbilitiesFor(permissions, role).rules);
 
-                    router.push("/dashboard");
+                    if (userData.resetRequired) {
+                        router.push("/reset-password");
+                    } else {
+                        router.push("/dashboard");
+                    }
                 } else {
                     setSubmitError(response.message || "Login failed");
                 }

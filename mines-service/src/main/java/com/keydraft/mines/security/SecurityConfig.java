@@ -52,6 +52,7 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/swagger-resources/**",
+                                "/uploads/**",
                                 "/webjars/**")
                         .permitAll()
                         .requestMatchers("/health").permitAll()

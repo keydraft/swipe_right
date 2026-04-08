@@ -46,4 +46,9 @@ public class EmployeeResponse {
     private String branchName;
     private String companyName;
     private boolean active;
+
+    private String passbookFilePath;
+    private String aadhaarFilePath;
+    private String panFilePath;
+    private String drivingLicenseFilePath;
 }

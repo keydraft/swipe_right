@@ -27,6 +27,10 @@ export const authApi = {
   registerAdmin: async (username, password) => {
     const response = await api.post("/auth/register-admin", { username, password });
     return response.data;
+  },
+  changePassword: async (newPassword) => {
+    const response = await api.post("/auth/change-password", { newPassword });
+    return response.data;
   }
 };
 

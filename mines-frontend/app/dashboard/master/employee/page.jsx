@@ -52,6 +52,13 @@ export default function EmployeePage() {
         pan: null,
         drivingLicense: null
     });
+    
+    const [existingFiles, setExistingFiles] = useState({
+        passbook: null,
+        aadhaar: null,
+        pan: null,
+        drivingLicense: null
+    });
 
     // Initial values for Formik
     const initialValues = {
@@ -135,7 +142,9 @@ export default function EmployeePage() {
                 // Ensure correct data types and add ID if editing
                 const payload = {
                     ...values,
-                    id: editingId,
+                    id: editingId || null,
+                    companyId: values.companyId || null,
+                    branchId: values.branchId || null,
                     basicSalary: parseFloat(values.basicSalary) || 0,
                     active: true
                 };
@@ -180,8 +189,10 @@ export default function EmployeePage() {
     const handleOpenModal = () => {
         setIsEditing(false);
         setEditingId(null);
+        setAvailableBranches([]);
         formik.resetForm();
         setFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
+        setExistingFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
         setOpenModal(true);
         setShowSuccess(false);
         setActiveStep(0);
@@ -192,6 +203,15 @@ export default function EmployeePage() {
         setEditingId(employee.id);
         
         console.log("Mapping employee for edit:", employee);
+
+        // Find the company to populate its branches
+        const compId = employee.company?.id || employee.companyId || "";
+        const company = companies.find(c => c.id === compId);
+        if (company) {
+            setAvailableBranches(company.branches || []);
+        } else {
+            setAvailableBranches([]);
+        }
 
         formik.setValues({
             firstName: employee.firstName || "",
@@ -222,6 +242,12 @@ export default function EmployeePage() {
         });
         
         setFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
+        setExistingFiles({
+            passbook: employee.passbookFilePath,
+            aadhaar: employee.aadhaarFilePath,
+            pan: employee.panFilePath,
+            drivingLicense: employee.drivingLicenseFilePath
+        });
         setOpenModal(true);
         setShowSuccess(false);
         setActiveStep(0);
@@ -250,6 +276,17 @@ export default function EmployeePage() {
         setShowSuccess(false);
         setIsEditing(false);
         setEditingId(null);
+        setAvailableBranches([]);
+        setExistingFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
+    };
+
+    const generatePassword = () => {
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
+        let password = "";
+        for (let i = 0; i < 10; i++) {
+            password += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        formik.setFieldValue("password", password);
     };
 
     const handleFileUpload = (field, file) => {
@@ -288,7 +325,7 @@ export default function EmployeePage() {
             const requiredStep1Fields = ['salaryType', 'basicSalary'];
             const errors = formik.errors;
             // Aadhaar and PAN are required documents
-            const docsUploaded = !!files.aadhaar && !!files.pan;
+            const docsUploaded = (!!files.aadhaar || !!existingFiles.aadhaar) && (!!files.pan || !!existingFiles.pan);
             return requiredStep1Fields.every(field => !!formik.values[field]) && 
                    !requiredStep1Fields.some(field => !!errors[field]) && 
                    docsUploaded;
@@ -409,7 +446,7 @@ export default function EmployeePage() {
                     <TextField
                         fullWidth size="small"
                         name={field}
-                        type={type}
+                        type={field === "password" ? "text" : type}
                         placeholder={placeholder}
                         variant="outlined"
                         value={value}
@@ -428,6 +465,9 @@ export default function EmployeePage() {
                                 // Allow letters, numbers, and common delimiters for DL/IFSC
                                 const val = e.target.value.replace(/[^a-zA-Z0-9\s-]/g, '').toUpperCase();
                                 formik.setFieldValue(field, val);
+                            } else if (field === "password") {
+                                // Prevent manual typing for password field
+                                return;
                             } else {
                                 formik.handleChange(e);
                             }
@@ -436,46 +476,94 @@ export default function EmployeePage() {
                         error={!!error}
                         helperText={error}
                         inputProps={field.includes('addressLine') ? { maxLength: 50 } : {}}
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
+                        InputProps={field === "password" ? {
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <Button 
+                                        size="small" 
+                                        onClick={generatePassword}
+                                        sx={{ 
+                                            fontSize: '10px', 
+                                            minWidth: 'auto',
+                                            color: '#0057FF',
+                                            fontWeight: 700,
+                                            mr: 1,
+                                            '&:hover': { backgroundColor: 'rgba(0, 87, 255, 0.04)' }
+                                        }}
+                                    >
+                                        GENERATE
+                                    </Button>
+                                </InputAdornment>
+                            )
+                        } : {}}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: field === "password" ? '#F3F4F6' : '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
+                        inputProps={{
+                            readOnly: field === "password",
+                            ...(field.includes('addressLine') ? { maxLength: 50 } : {})
+                        }}
                     />
                 )}
             </Box>
         );
     };
 
-    const renderUploadButton = (label, field) => (
-        <Box>
-            <input
-                type="file"
-                id={`file-${field}`}
-                style={{ display: 'none' }}
-                onChange={(e) => handleFileUpload(field, e.target.files[0])}
-            />
-            <label htmlFor={`file-${field}`}>
-                <Button
-                    component="span"
-                    variant="contained"
-                    disableElevation
-                    fullWidth
-                    startIcon={<UploadIcon />}
-                    sx={{
-                        background: files[field] 
-                            ? 'linear-gradient(135deg, #10B981 0%, #059669 100%)' 
-                            : 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
-                        borderRadius: '8px',
-                        textTransform: 'none',
-                        fontWeight: 600,
-                        fontSize: '13px',
-                        py: 1.2,
-                        mt: label === "Upload Passbook" ? 0 : 2.5,
-                        '&:hover': { background: files[field] ? '#059669' : '#003499' }
-                    }}
-                >
-                    {files[field] ? files[field].name : label}
-                </Button>
-            </label>
-        </Box>
-    );
+    const renderUploadButton = (label, field) => {
+        const hasExisting = !!existingFiles[field];
+        const isUploaded = !!files[field];
+        const fileName = isUploaded ? files[field].name : (hasExisting ? "File Uploaded" : label);
+        const serverPath = "http://localhost:8080/uploads/employees/";
+
+        return (
+            <Box>
+                <input
+                    type="file"
+                    id={`file-${field}`}
+                    style={{ display: 'none' }}
+                    onChange={(e) => handleFileUpload(field, e.target.files[0])}
+                />
+                <Box sx={{ display: 'flex', gap: 1, mt: label === "Upload Passbook" ? 0 : 2.5 }}>
+                    <label htmlFor={`file-${field}`} style={{ flex: 1 }}>
+                        <Button
+                            component="span"
+                            variant="contained"
+                            disableElevation
+                            fullWidth
+                            startIcon={<UploadIcon />}
+                            sx={{
+                                background: isUploaded || hasExisting
+                                    ? 'linear-gradient(135deg, #10B981 0%, #059669 100%)' 
+                                    : 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                                borderRadius: '8px',
+                                textTransform: 'none',
+                                fontWeight: 600,
+                                fontSize: '13px',
+                                py: 1.2,
+                                '&:hover': { background: isUploaded || hasExisting ? '#059669' : '#003499' }
+                            }}
+                        >
+                            {fileName}
+                        </Button>
+                    </label>
+                    {hasExisting && !isUploaded && (
+                        <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => window.open(serverPath + existingFiles[field], "_blank")}
+                            sx={{ 
+                                borderRadius: '8px', 
+                                border: '1px solid #10B981', 
+                                color: '#10B981',
+                                minWidth: '60px',
+                                '&:hover': { border: '1px solid #059669', backgroundColor: 'rgba(16, 185, 129, 0.04)' }
+                            }}
+                        >
+                            VIEW
+                        </Button>
+                    )}
+                </Box>
+            </Box>
+        );
+    };
 
     const renderSuccessStep = () => (
         <Box sx={{

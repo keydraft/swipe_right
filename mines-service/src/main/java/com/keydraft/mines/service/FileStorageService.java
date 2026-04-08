@@ -29,7 +29,8 @@ public class FileStorageService {
      * Stores a file locally and returns the stored filename.
      */
     public String storeFile(MultipartFile file) {
-        if (file == null || file.isEmpty()) return null;
+        if (file == null || file.isEmpty())
+            return null;
 
         try {
             String originalFileName = file.getOriginalFilename();
@@ -41,7 +42,7 @@ public class FileStorageService {
             String storedFileName = UUID.randomUUID().toString() + extension;
             Path targetPath = Paths.get(uploadDir).resolve(storedFileName);
             Files.copy(file.getInputStream(), targetPath);
-            
+
             return storedFileName;
         } catch (IOException e) {
             throw new RuntimeException("Could not store file", e);
