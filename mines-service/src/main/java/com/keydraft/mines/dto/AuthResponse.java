@@ -9,5 +9,6 @@ import lombok.*;
 public class AuthResponse {
     private String username;
     private String role;
+    private java.util.Set<String> permissions;
     private boolean resetRequired;
 }

@@ -34,6 +34,7 @@ public class AuthController {
         AuthResponse body = AuthResponse.builder()
                 .username(result.username())
                 .role(result.role())
+                .permissions(result.permissions())
                 .resetRequired(result.resetRequired())
                 .build();
 
@@ -66,6 +67,7 @@ public class AuthController {
         AuthResponse body = AuthResponse.builder()
                 .username(result.username())
                 .role(result.role())
+                .permissions(result.permissions())
                 .resetRequired(result.resetRequired())
                 .build();
 

@@ -6,7 +6,6 @@ import com.keydraft.mines.entity.*;
 import com.keydraft.mines.exception.ResourceNotFoundException;
 import com.keydraft.mines.repository.BranchRepository;
 import com.keydraft.mines.repository.CompanyRepository;
-import com.keydraft.mines.repository.ProductPriceRepository;
 import com.keydraft.mines.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,6 @@ import java.util.stream.Collectors;
 public class ProductService {
 
     private final ProductRepository productRepository;
-    private final ProductPriceRepository productPriceRepository;
     private final CompanyRepository companyRepository;
     private final BranchRepository branchRepository;
 
@@ -46,28 +44,23 @@ public class ProductService {
         product.setActive(request.isActive());
         product.setCompany(company);
 
-        Product savedProduct = productRepository.save(product);
-
-        // Delete existing prices and recreate
-        if (id != null) {
-            List<ProductPrice> existingPrices = productPriceRepository.findByProductId(id);
-            productPriceRepository.deleteAll(existingPrices);
-        }
-
+        // Update prices collection
         if (request.getPrices() != null) {
-            List<ProductPrice> productPrices = request.getPrices().stream().map(pr -> {
+            product.getPrices().clear();
+            for (ProductRequest.PriceRequest pr : request.getPrices()) {
                 Branch branch = branchRepository.findById(pr.getBranchId())
                         .orElseThrow(() -> new ResourceNotFoundException("Branch not found"));
-                return ProductPrice.builder()
-                        .product(savedProduct)
+                
+                ProductPrice price = ProductPrice.builder()
+                        .product(product)
                         .branch(branch)
                         .rate(pr.getRate())
                         .build();
-            }).collect(Collectors.toList());
-            productPriceRepository.saveAll(productPrices);
-            savedProduct.setPrices(productPrices);
+                product.getPrices().add(price);
+            }
         }
 
+        Product savedProduct = productRepository.save(product);
         return mapToResponse(savedProduct);
     }
 
@@ -86,7 +79,7 @@ public class ProductService {
     @Transactional
     public void deleteProduct(UUID id) {
         Product product = productRepository.findById(id)
-                        .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found"));
         productRepository.delete(product);
     }
 

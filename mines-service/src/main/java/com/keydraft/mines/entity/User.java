@@ -7,7 +7,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -41,7 +40,12 @@ public class User extends BaseEntity implements UserDetails {
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of(new SimpleGrantedAuthority("ROLE_" + role.getName()));
+        java.util.Set<GrantedAuthority> authorities = new java.util.HashSet<>();
+        authorities.add(new SimpleGrantedAuthority("ROLE_" + role.getName()));
+        role.getPermissions().forEach(permission -> {
+            authorities.add(new SimpleGrantedAuthority(permission.getName()));
+        });
+        return authorities;
     }
 
     @Override

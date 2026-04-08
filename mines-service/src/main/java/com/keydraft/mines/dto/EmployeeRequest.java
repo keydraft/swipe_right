@@ -59,6 +59,7 @@ public class EmployeeRequest {
     private String drivingLicenseNumber;
 
     // --- HIERARCHY ---
+    private UUID companyId;
     private UUID branchId;
     private List<UUID> companyIds; // For Partner role: multi-select
     

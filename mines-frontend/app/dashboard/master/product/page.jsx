@@ -27,7 +27,6 @@ export default function ProductPage() {
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState(null);
-
     const initialValues = {
         name: "",
         shortName: "",
@@ -41,18 +40,49 @@ export default function ProductPage() {
     const validationSchema = Yup.object({
         name: Yup.string().required("Product name is required"),
         shortName: Yup.string().required("Short name is required"),
-        hsnc: Yup.string().required("HSN Code is required"),
-        gst: Yup.number().typeError("GST must be a number").required("GST is required"),
+        hsnc: Yup.string()
+            .matches(/^[0-9]{4,8}$/, "HSN Code must be 4-8 digits")
+            .required("HSN Code is required"),
+        gst: Yup.number().typeError("GST must be a number").required("GST is required").min(0, "Invalid GST").max(100, "Invalid GST"),
         rmType: Yup.string().required("RM Type is required"),
     });
+
+    useEffect(() => {
+        fetchInitialData();
+    }, []);
+
+    const fetchInitialData = async () => {
+        try {
+            const productResp = await productApi.getAll();
+            if (productResp.success) {
+                setProducts(productResp.data);
+            }
+
+            // Fetch companies to get branches for price mapping
+            const companyResp = await adminApi.getCompanies();
+            if (companyResp.success) {
+                localStorage.setItem("companies", JSON.stringify(companyResp.data));
+            }
+            setIsInitialized(true);
+        } catch (error) {
+            console.error("Error fetching initial data:", error);
+        }
+    };
 
     const formik = useFormik({
         initialValues,
         validationSchema,
         onSubmit: async (values) => {
-            const companyId = values.branchPrices?.[0]?.companyId || null;
+            const branchPrices = values.branchPrices || [];
+            if (branchPrices.length === 0) {
+                alert("Please ensure companies and sites are registered first.");
+                return;
+            }
+
+            // Get companyId from the first branch price as products are tied to a company
+            const companyId = branchPrices[0]?.companyId;
             if (!companyId) {
-                alert("No company found. Please create a company and site first.");
+                alert("Internal error: Company ID not found for the selected branch.");
                 return;
             }
 
@@ -64,7 +94,7 @@ export default function ProductPage() {
                 rmType: values.rmType || "CRUSHER",
                 active: values.status === "Active",
                 companyId: companyId,
-                prices: values.branchPrices.map(p => ({
+                prices: branchPrices.map(p => ({
                     branchId: p.branchId,
                     rate: parseFloat(p.rate)
                 }))
@@ -73,27 +103,43 @@ export default function ProductPage() {
             try {
                 const response = await productApi.upsert(payload, isEditing ? editingId : null);
                 if (response.success) {
-                    const listResp = await productApi.getAll();
-                    setProducts(listResp.data);
+                    await fetchInitialData();
                     handleCloseModal();
+                } else {
+                    alert("Failed to save product: " + (response.message || "Unknown error"));
                 }
             } catch (error) {
                 console.error("Error saving product:", error);
-                alert("Failed to save product: " + (error.response?.data?.message || "Unknown error"));
+                alert("Failed to save product: " + (error.response?.data?.message || "An error occurred"));
             }
         },
     });
 
-    const handleOpenModal = () => {
+    const handleOpenModal = async () => {
         let availableBranches = [];
-        const savedCompanies = localStorage.getItem("companies");
-        if (savedCompanies) {
-            const companies = JSON.parse(savedCompanies);
-            availableBranches = companies.flatMap(c => (c.branches || []).map(b => ({
-                id: b.id,
-                name: b.name,
-                companyId: c.id
-            })));
+
+        try {
+            const companyResp = await adminApi.getCompanies();
+            if (companyResp.success) {
+                const companies = companyResp.data;
+                availableBranches = companies.flatMap(c => (c.branches || []).map(b => ({
+                    id: b.id,
+                    name: b.name,
+                    companyId: c.id
+                })));
+            }
+        } catch (error) {
+            console.error("Error fetching companies:", error);
+            // Fallback to localStorage if API fails
+            const savedCompanies = localStorage.getItem("companies");
+            if (savedCompanies) {
+                const companies = JSON.parse(savedCompanies);
+                availableBranches = companies.flatMap(c => (c.branches || []).map(b => ({
+                    id: b.id,
+                    name: b.name,
+                    companyId: c.id
+                })));
+            }
         }
 
         const initialBranchPrices = availableBranches.map(branch => ({
@@ -121,20 +167,30 @@ export default function ProductPage() {
     };
 
 
-    const handleEditProduct = (product) => {
-        // Fetch current branches to ensure all are listed
+    const handleEditProduct = async (product) => {
         let currentBranches = [];
-        const savedCompanies = localStorage.getItem("companies");
-        if (savedCompanies) {
-            const companies = JSON.parse(savedCompanies);
-            currentBranches = companies.flatMap(c => (c.branches || []).map(b => ({
-                id: b.id,
-                name: b.name,
-                companyId: c.id
-            })));
+        try {
+            const companyResp = await adminApi.getCompanies();
+            if (companyResp.success) {
+                currentBranches = companyResp.data.flatMap(c => (c.branches || []).map(b => ({
+                    id: b.id,
+                    name: b.name,
+                    companyId: c.id
+                })));
+            }
+        } catch (error) {
+            console.error("Error fetching companies:", error);
+            const savedCompanies = localStorage.getItem("companies");
+            if (savedCompanies) {
+                const companies = JSON.parse(savedCompanies);
+                currentBranches = companies.flatMap(c => (c.branches || []).map(b => ({
+                    id: b.id,
+                    name: b.name,
+                    companyId: c.id
+                })));
+            }
         }
 
-        // Merge existing backend prices with current branches
         const mergedPlantPrices = currentBranches.map(branch => {
             const existing = (product.prices || []).find(p => p.branchId === branch.id);
             return {
@@ -173,10 +229,10 @@ export default function ProductPage() {
         }
     };
 
-    const filteredProducts = products.filter(product => 
+    const filteredProducts = products.filter(product =>
         product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         product.shortName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        product.hsnc.toLowerCase().includes(searchQuery.toLowerCase())
+        (product.hsnCode && product.hsnCode.toLowerCase().includes(searchQuery.toLowerCase()))
     );
 
     const handleChangePage = (event, newPage) => {
@@ -283,8 +339,8 @@ export default function ProductPage() {
                                     <TableCell>{page * rowsPerPage + index + 1}</TableCell>
                                     <TableCell sx={{ fontWeight: 500, color: palette.text.primary }}>{product.name}</TableCell>
                                     <TableCell>{product.shortName}</TableCell>
-                                    <TableCell>{product.hsnc}</TableCell>
-                                    <TableCell>{product.gst}%</TableCell>
+                                    <TableCell>{product.hsnCode}</TableCell>
+                                    <TableCell>{product.gstPercentage}%</TableCell>
                                     <TableCell>{product.rmType}</TableCell>
                                     <TableCell>
                                         <Box sx={{
@@ -294,17 +350,17 @@ export default function ProductPage() {
                                             borderRadius: '6px',
                                             fontSize: '12px',
                                             fontWeight: 600,
-                                            backgroundColor: product.status === 'Active' ? '#ECFDF5' : '#FEF2F2',
-                                            color: product.status === 'Active' ? '#059669' : '#DC2626'
+                                            backgroundColor: product.active ? '#ECFDF5' : '#FEF2F2',
+                                            color: product.active ? '#059669' : '#DC2626'
                                         }}>
-                                            {product.status}
+                                            {product.active ? 'Active' : 'Inactive'}
                                         </Box>
                                     </TableCell>
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
                                             <Tooltip title="Edit">
-                                                <IconButton 
-                                                    size="small" 
+                                                <IconButton
+                                                    size="small"
                                                     sx={{ color: '#0057FF' }}
                                                     onClick={() => handleEditProduct(product)}
                                                 >
@@ -312,8 +368,8 @@ export default function ProductPage() {
                                                 </IconButton>
                                             </Tooltip>
                                             <Tooltip title="Delete">
-                                                <IconButton 
-                                                    size="small" 
+                                                <IconButton
+                                                    size="small"
                                                     sx={{ color: '#EF4444' }}
                                                     onClick={() => handleDeleteProduct(product.id)}
                                                 >
@@ -343,10 +399,15 @@ export default function ProductPage() {
                     onPageChange={handleChangePage}
                     onRowsPerPageChange={handleChangeRowsPerPage}
                     sx={{
-                        borderTop: `1px solid ${palette.divider}`,
+                        borderTop: `1px solid rgba(0,0,0,0.04)`,
                         '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': {
                             fontSize: '13px',
-                            color: palette.text.secondary
+                            color: 'text.secondary',
+                            fontWeight: 500
+                        },
+                        '.MuiTablePagination-select': {
+                            fontSize: '13px',
+                            fontWeight: 500
                         }
                     }}
                 />
@@ -374,12 +435,12 @@ export default function ProductPage() {
                         <Box sx={{ display: 'flex', gap: 3 }}>
                             <Box sx={{ flex: 1 }}>
                                 <Typography sx={{ fontSize: '13px', color: '#9CA3AF', mb: 0.5 }}>Product Name</Typography>
-                                <TextField 
-                                    fullWidth 
+                                <TextField
+                                    fullWidth
                                     size="small"
                                     name="name"
                                     placeholder="Enter Product Name"
-                                    variant="outlined" 
+                                    variant="outlined"
                                     value={formik.values.name}
                                     onChange={formik.handleChange}
                                     onBlur={formik.handleBlur}
@@ -390,12 +451,12 @@ export default function ProductPage() {
                             </Box>
                             <Box sx={{ flex: 1 }}>
                                 <Typography sx={{ fontSize: '13px', color: '#9CA3AF', mb: 0.5 }}>Short Name</Typography>
-                                <TextField 
-                                    fullWidth 
+                                <TextField
+                                    fullWidth
                                     size="small"
                                     name="shortName"
                                     placeholder="Enter Short Name"
-                                    variant="outlined" 
+                                    variant="outlined"
                                     value={formik.values.shortName}
                                     onChange={formik.handleChange}
                                     onBlur={formik.handleBlur}
@@ -410,12 +471,12 @@ export default function ProductPage() {
                         <Box sx={{ display: 'flex', gap: 3 }}>
                             <Box sx={{ flex: 1 }}>
                                 <Typography sx={{ fontSize: '13px', color: '#9CA3AF', mb: 0.5 }}>HSN Code</Typography>
-                                <TextField 
-                                    fullWidth 
+                                <TextField
+                                    fullWidth
                                     size="small"
                                     name="hsnc"
                                     placeholder="HSN Code"
-                                    variant="outlined" 
+                                    variant="outlined"
                                     value={formik.values.hsnc}
                                     onChange={formik.handleChange}
                                     onBlur={formik.handleBlur}
@@ -426,12 +487,12 @@ export default function ProductPage() {
                             </Box>
                             <Box sx={{ flex: 1 }}>
                                 <Typography sx={{ fontSize: '13px', color: '#9CA3AF', mb: 0.5 }}>GST %</Typography>
-                                <TextField 
-                                    fullWidth 
+                                <TextField
+                                    fullWidth
                                     size="small"
                                     name="gst"
                                     placeholder="0"
-                                    variant="outlined" 
+                                    variant="outlined"
                                     value={formik.values.gst}
                                     onChange={formik.handleChange}
                                     onBlur={formik.handleBlur}
@@ -440,10 +501,10 @@ export default function ProductPage() {
                                     InputProps={{
                                         sx: { position: 'relative' },
                                         startAdornment: (
-                                            <Box sx={{ 
-                                                position: 'absolute', top: -10, left: 10, 
-                                                backgroundColor: '#fff', px: 0.5, fontSize: '10px', 
-                                                color: '#9CA3AF', zIndex: 1 
+                                            <Box sx={{
+                                                position: 'absolute', top: -10, left: 10,
+                                                backgroundColor: '#fff', px: 0.5, fontSize: '10px',
+                                                color: '#9CA3AF', zIndex: 1
                                             }}>
                                                 GST %
                                             </Box>
@@ -457,11 +518,11 @@ export default function ProductPage() {
                         {/* RM Type row */}
                         <Box>
                             <Typography sx={{ fontSize: '13px', color: '#9CA3AF', mb: 0.5 }}>RM Type</Typography>
-                            <Select 
-                                fullWidth 
+                            <Select
+                                fullWidth
                                 size="small"
                                 name="rmType"
-                                displayEmpty 
+                                displayEmpty
                                 value={formik.values.rmType}
                                 onChange={formik.handleChange}
                                 onBlur={formik.handleBlur}
@@ -491,17 +552,17 @@ export default function ProductPage() {
                                             <TableCell sx={{ borderBottom: '1px solid #F3F4F6', py: 2 }}>{index + 1}</TableCell>
                                             <TableCell sx={{ borderBottom: '1px solid #F3F4F6', color: '#374151', fontWeight: 500 }}>{plant.branchName}</TableCell>
                                             <TableCell sx={{ borderBottom: '1px solid #F3F4F6' }}>
-                                                <TextField 
+                                                <TextField
                                                     size="small"
                                                     value={plant.rate}
                                                     onChange={(e) => handleBranchPriceChange(index, e.target.value)}
                                                     InputProps={{
                                                         sx: { position: 'relative', height: '36px' },
                                                         startAdornment: (
-                                                            <Box sx={{ 
-                                                                position: 'absolute', top: -12, left: 10, 
-                                                                backgroundColor: '#fff', px: 0.5, fontSize: '10px', 
-                                                                color: '#9CA3AF', zIndex: 1 
+                                                            <Box sx={{
+                                                                position: 'absolute', top: -12, left: 10,
+                                                                backgroundColor: '#fff', px: 0.5, fontSize: '10px',
+                                                                color: '#9CA3AF', zIndex: 1
                                                             }}>
                                                                 Rate
                                                             </Box>
@@ -524,40 +585,42 @@ export default function ProductPage() {
                                         name="status"
                                         checked={formik.values.status === "Active"}
                                         onChange={(e) => formik.setFieldValue("status", e.target.checked ? "Active" : "Inactive")}
-                                        sx={{ 
-                                            '& .MuiSwitch-switchBase.Mui-checked': { color: '#3B82F6' }, 
-                                            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#3B82F6' } 
+                                        sx={{
+                                            '& .MuiSwitch-switchBase.Mui-checked': { color: '#3B82F6' },
+                                            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#3B82F6' }
                                         }}
                                     />
                                 }
                                 label="Active"
                                 sx={{ color: '#4B5563', fontWeight: 500 }}
                             />
-                            
+
                             <Box sx={{ display: 'flex', gap: 2 }}>
-                                <Button 
-                                    variant="contained" 
+                                <Button
+                                    variant="contained"
                                     onClick={formik.handleSubmit}
-                                    sx={{ 
-                                        backgroundColor: '#3B82F6', 
-                                        color: '#fff', 
-                                        px: 4, 
+                                    disabled={!formik.values.name || !formik.values.shortName || !formik.values.hsnc || !formik.isValid}
+                                    sx={{
+                                        backgroundColor: '#3B82F6',
+                                        color: '#fff',
+                                        px: 4,
                                         py: 1,
                                         borderRadius: '4px',
                                         textTransform: 'none',
                                         fontWeight: 600,
-                                        '&:hover': { backgroundColor: '#2563EB' }
+                                        '&:hover': { backgroundColor: '#2563EB' },
+                                        '&.Mui-disabled': { backgroundColor: '#E5E7EB', color: '#9CA3AF' }
                                     }}
                                 >
                                     Save
                                 </Button>
-                                <Button 
-                                    variant="outlined" 
+                                <Button
+                                    variant="outlined"
                                     onClick={handleCloseModal}
-                                    sx={{ 
-                                        borderColor: '#FDBA74', 
-                                        color: '#FDBA74', 
-                                        px: 4, 
+                                    sx={{
+                                        borderColor: '#FDBA74',
+                                        color: '#FDBA74',
+                                        px: 4,
                                         py: 1,
                                         borderRadius: '4px',
                                         textTransform: 'none',

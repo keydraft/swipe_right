@@ -5,18 +5,21 @@ import {
     Box, Typography, Card, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
-    Select, MenuItem, Switch, FormControlLabel, Radio, RadioGroup
+    Select, MenuItem, Switch, FormControlLabel, Radio, RadioGroup,
+    TablePagination, Stepper, Step, StepLabel, CircularProgress
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, FileDownloadOutlined as DownloadIcon,
     PrintOutlined as PrintIcon, SortOutlined as SortIcon, VisibilityOutlined as ViewIcon,
-    MoreVertOutlined as ActionIcon, CloudUploadOutlined as UploadIcon
+    MoreVertOutlined as ActionIcon, CloudUploadOutlined as UploadIcon,
+    EditOutlined as EditIcon, DeleteOutline as DeleteIcon
 } from "@mui/icons-material";
 import { useRouter } from "next/navigation";
 import { palette } from "@/theme";
 import { employeeApi, adminApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
+import { aadhaarRegex, panRegex, phoneRegex, pincodeRegex, ifscRegex } from "@/utils/validationSchemas";
 
 export default function EmployeePage() {
     const [searchQuery, setSearchQuery] = useState("");
@@ -30,7 +33,17 @@ export default function EmployeePage() {
     const [roles, setRoles] = useState([]);
     const [companies, setCompanies] = useState([]);
     const [availableBranches, setAvailableBranches] = useState([]);
-    const [currentUserRank, setCurrentUserRank] = useState(0); // Default to 0 (highest privilege) so roles are visible by default
+    const [currentUserRank, setCurrentUserRank] = useState(0); 
+    const [page, setPage] = useState(0);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editingId, setEditingId] = useState(null);
+
+    const handleChangePage = (event, newPage) => setPage(newPage);
+    const handleChangeRowsPerPage = (event) => {
+        setRowsPerPage(parseInt(event.target.value, 10));
+        setPage(0);
+    };
     
     // File state
     const [files, setFiles] = useState({
@@ -53,16 +66,34 @@ export default function EmployeePage() {
     const employeeValidationSchema = Yup.object({
         firstName: Yup.string().required("First name is required"),
         lastName: Yup.string().required("Last name is required"),
+        gender: Yup.string().required("Gender is required"),
         role: Yup.string().required("Role is required"),
-        contactNumber: Yup.string().matches(/^[0-9]{10,12}$/, "Phone must be 10-12 digits").required("Contact number is required"),
-        pincode: Yup.string().matches(/^[0-9]{6}$/, "Pincode must be 6 digits"),
-        addressLine1: Yup.string().required("Address is required"),
+        companyId: Yup.string().required("Company is required"),
+        branchId: Yup.string().required("Branch is required"),
+        contactNumber: Yup.string()
+            .matches(phoneRegex, "Phone must be 10-12 digits")
+            .required("Contact number is required"),
+        pincode: Yup.string()
+            .matches(pincodeRegex, "Pincode must be 6 digits")
+            .required("Pincode is required"),
+        addressLine1: Yup.string().max(50, "Address cannot exceed 50 characters").required("Address is required"),
         district: Yup.string().required("District is required"),
         state: Yup.string().required("State is required"),
-        username: Yup.string().required("User name is required"),
-        password: Yup.string().min(6, "Password must be at least 6 characters").required("Password is required"),
-        dateOfBirth: Yup.string().required("DOB is required"),
-        dateOfJoining: Yup.string().required("DOJ is required"),
+        username: Yup.string().required("Username is required"),
+        password: isEditing 
+            ? Yup.string().min(6, "Password must be at least 6 characters") 
+            : Yup.string().min(6, "Password must be at least 6 characters").required("Password is required"),
+        dateOfBirth: Yup.string().required("Date of Birth is required"),
+        dateOfJoining: Yup.string().required("Date of Joining is required"),
+        
+        // Optional but validated if provided
+        salaryType: Yup.string().required("Salary type is required"),
+        basicSalary: Yup.number().typeError("Basic salary must be a number").required("Basic salary is required"),
+        bankAccountNumber: Yup.string().matches(/^[0-9]{9,18}$/, "Account number must be 9-18 digits"),
+        ifscCode: Yup.string().matches(ifscRegex, "Invalid IFSC format"),
+        aadhaarNumber: Yup.string().matches(aadhaarRegex, "Aadhar number must be 12 digits"),
+        panNumber: Yup.string().matches(panRegex, "Invalid PAN format"),
+        drivingLicenseNumber: Yup.string().min(5, "Too short"),
     });
 
     const fetchInitialData = async () => {
@@ -101,20 +132,29 @@ export default function EmployeePage() {
         validateOnChange: false,
         onSubmit: async (values) => {
             try {
-                // Ensure date format is YYYY-MM-DD for backend
+                // Ensure correct data types and add ID if editing
                 const payload = {
                     ...values,
-                    basicSalary: parseFloat(values.basicSalary) || 0
+                    id: editingId,
+                    basicSalary: parseFloat(values.basicSalary) || 0,
+                    active: true
                 };
+
+                // If editing and password is empty, remove it so we don't overwrite it
+                if (isEditing && !values.password) {
+                    delete payload.password;
+                }
                 
                 const response = await employeeApi.upsert(payload, files);
                 if (response.success) {
                     setShowSuccess(true);
+                    // Refresh data
                     const listResp = await employeeApi.getAll();
                     if (listResp.success) setEmployees(listResp.data);
                     
                     setTimeout(() => {
                         handleCloseModal();
+                        fetchInitialData();
                     }, 2000);
                 }
             } catch (error) {
@@ -126,14 +166,81 @@ export default function EmployeePage() {
 
     const filteredRoles = React.useMemo(() => {
         const list = roles.filter(role => role.rank > currentUserRank);
-        console.log("Filtering roles (rank > current):", { rolesCount: roles.length, currentUserRank, filteredCount: list.length });
         return list;
     }, [roles, currentUserRank]);
 
+    // Debug logging for validation errors
+    useEffect(() => {
+        if (Object.keys(formik.errors).length > 0) {
+            console.log("Formik Validation Errors:", formik.errors);
+            console.log("Current Formik Values:", formik.values);
+        }
+    }, [formik.errors, formik.isSubmitting]);
+
     const handleOpenModal = () => {
+        setIsEditing(false);
+        setEditingId(null);
         formik.resetForm();
         setFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
         setOpenModal(true);
+        setShowSuccess(false);
+        setActiveStep(0);
+    };
+
+    const handleEditEmployee = (employee) => {
+        setIsEditing(true);
+        setEditingId(employee.id);
+        
+        console.log("Mapping employee for edit:", employee);
+
+        formik.setValues({
+            firstName: employee.firstName || "",
+            lastName: employee.lastName || "",
+            gender: (employee.gender || "male").toLowerCase(),
+            role: employee.role?.roleName || employee.role || employee.designation || "",
+            companyId: employee.company?.id || employee.companyId || "",
+            branchId: employee.branch?.id || employee.branchId || "",
+            dateOfBirth: employee.dateOfBirth?.split('T')[0] || "",
+            dateOfJoining: employee.dateOfJoining?.split('T')[0] || "",
+            addressLine1: employee.address?.addressLine1 || employee.addressLine1 || "",
+            addressLine2: employee.address?.addressLine2 || employee.addressLine2 || "",
+            district: employee.address?.district || employee.district || "",
+            state: employee.address?.state || employee.state || "",
+            pincode: employee.address?.pincode || employee.pincode || "",
+            contactNumber: employee.contactNumber || employee.phone || "",
+            username: employee.user?.username || employee.username || "",
+            password: "",
+            salaryType: employee.salaryType || "MONTHLY",
+            basicSalary: employee.basicSalary || 0,
+            bankAccountHolderName: employee.bankAccountHolderName || "",
+            bankName: employee.bankName || "",
+            bankAccountNumber: employee.bankAccountNumber || "",
+            ifscCode: (employee.ifscCode || "").toUpperCase(),
+            aadhaarNumber: employee.aadhaarNumber ? String(employee.aadhaarNumber) : "",
+            panNumber: (employee.panNumber || "").toUpperCase(),
+            drivingLicenseNumber: (employee.drivingLicenseNumber || "").toUpperCase()
+        });
+        
+        setFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
+        setOpenModal(true);
+        setShowSuccess(false);
+        setActiveStep(0);
+    };
+
+    const handleDeleteEmployee = async (id) => {
+        if (window.confirm("Are you sure you want to delete this employee?")) {
+            try {
+                const response = await employeeApi.delete(id);
+                if (response.success) {
+                    fetchInitialData();
+                } else {
+                    alert(response.message || "Failed to delete employee");
+                }
+            } catch (error) {
+                console.error("Error deleting employee:", error);
+                alert("An error occurred while deleting the employee");
+            }
+        }
     };
 
     const handleCloseModal = () => {
@@ -141,6 +248,8 @@ export default function EmployeePage() {
         setActiveStep(0);
         formik.resetForm();
         setShowSuccess(false);
+        setIsEditing(false);
+        setEditingId(null);
     };
 
     const handleFileUpload = (field, file) => {
@@ -148,9 +257,15 @@ export default function EmployeePage() {
     };
 
     const handleNext = async () => {
+        // If editing, skip validation blocks for navigation
+        if (isEditing) {
+            setActiveStep((prev) => prev + 1);
+            return;
+        }
+
         const errors = await formik.validateForm();
         if (activeStep === 0) {
-            const step1Fields = ['firstName', 'lastName', 'role', 'contactNumber', 'addressLine1', 'district', 'state', 'pincode', 'dateOfBirth', 'dateOfJoining'];
+            const step1Fields = ['firstName', 'lastName', 'gender', 'role', 'companyId', 'branchId', 'contactNumber', 'addressLine1', 'district', 'state', 'pincode', 'dateOfBirth', 'dateOfJoining'];
             const touchedFields = step1Fields.reduce((acc, field) => ({ ...acc, [field]: true }), {});
             formik.setTouched(touchedFields);
             const step1Errors = step1Fields.filter(key => errors[key]);
@@ -159,6 +274,30 @@ export default function EmployeePage() {
         setActiveStep((prev) => prev + 1);
     };
     const handleBack = () => setActiveStep((prev) => prev - 1);
+
+    const isStepComplete = () => {
+        // If we are editing, allow navigation between steps freely
+        if (isEditing) return true;
+
+        if (activeStep === 0) {
+            const requiredStep0 = ['firstName', 'lastName', 'gender', 'role', 'companyId', 'branchId', 'contactNumber', 'addressLine1', 'district', 'state', 'pincode', 'dateOfBirth', 'dateOfJoining'];
+            const errors = formik.errors;
+            return requiredStep0.every(field => !!formik.values[field]) && !requiredStep0.some(field => !!errors[field]);
+        }
+        if (activeStep === 1) {
+            const requiredStep1Fields = ['salaryType', 'basicSalary'];
+            const errors = formik.errors;
+            // Aadhaar and PAN are required documents
+            const docsUploaded = !!files.aadhaar && !!files.pan;
+            return requiredStep1Fields.every(field => !!formik.values[field]) && 
+                   !requiredStep1Fields.some(field => !!errors[field]) && 
+                   docsUploaded;
+        }
+        if (activeStep === 2) {
+            return !!formik.values.username && !!formik.values.password && !formik.errors.username && !formik.errors.password;
+        }
+        return true;
+    };
 
     const steps = ["Basic Employee Details", "Documents & Access", "Login Access"];
 
@@ -274,10 +413,29 @@ export default function EmployeePage() {
                         placeholder={placeholder}
                         variant="outlined"
                         value={value}
-                        onChange={formik.handleChange}
+                        onChange={(e) => {
+                            const letterOnlyFields = ['firstName', 'lastName', 'district', 'state', 'bankAccountHolderName', 'bankName'];
+                            const numericOnlyFields = ['contactNumber', 'aadhaarNumber', 'bankAccountNumber', 'pincode', 'basicSalary'];
+                            const alphanumericFields = ['drivingLicenseNumber', 'panNumber', 'ifscCode'];
+
+                            if (letterOnlyFields.includes(field)) {
+                                const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                                formik.setFieldValue(field, val);
+                            } else if (numericOnlyFields.includes(field)) {
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                formik.setFieldValue(field, val);
+                            } else if (alphanumericFields.includes(field)) {
+                                // Allow letters, numbers, and common delimiters for DL/IFSC
+                                const val = e.target.value.replace(/[^a-zA-Z0-9\s-]/g, '').toUpperCase();
+                                formik.setFieldValue(field, val);
+                            } else {
+                                formik.handleChange(e);
+                            }
+                        }}
                         onBlur={formik.handleBlur}
                         error={!!error}
                         helperText={error}
+                        inputProps={field.includes('addressLine') ? { maxLength: 50 } : {}}
                         sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
                     />
                 )}
@@ -506,8 +664,10 @@ export default function EmployeePage() {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {filteredEmployees.map((employee) => (
-                                <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
+                            {filteredEmployees
+                                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                                .map((employee) => (
+                                    <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
                                     <TableCell sx={{ fontSize: '12px', color: palette.text.secondary }}>{employee.id.substring(0, 8)}...</TableCell>
                                     <TableCell>{employee.firstName}</TableCell>
                                     <TableCell>{employee.lastName}</TableCell>
@@ -515,15 +675,28 @@ export default function EmployeePage() {
                                     <TableCell>{employee.phone}</TableCell>
                                     <TableCell>{employee.address?.pincode}</TableCell>
                                     <TableCell align="center">
-                                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
                                             <Tooltip title="View">
                                                 <IconButton size="small" sx={{ color: palette.primary.main }}>
                                                     <ViewIcon fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
-                                            <Tooltip title="Actions">
-                                                <IconButton size="small" sx={{ color: palette.text.secondary }}>
-                                                    <ActionIcon fontSize="small" />
+                                            <Tooltip title="Edit">
+                                                <IconButton 
+                                                    size="small" 
+                                                    sx={{ color: '#0057FF' }}
+                                                    onClick={() => handleEditEmployee(employee)}
+                                                >
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete">
+                                                <IconButton 
+                                                    size="small" 
+                                                    sx={{ color: '#EF4444' }}
+                                                    onClick={() => handleDeleteEmployee(employee.id)}
+                                                >
+                                                    <DeleteIcon fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
                                         </Box>
@@ -540,6 +713,27 @@ export default function EmployeePage() {
                         </TableBody>
                     </Table>
                 </TableContainer>
+                <TablePagination
+                    rowsPerPageOptions={[5, 10, 25]}
+                    component="div"
+                    count={filteredEmployees.length}
+                    rowsPerPage={rowsPerPage}
+                    page={page}
+                    onPageChange={handleChangePage}
+                    onRowsPerPageChange={handleChangeRowsPerPage}
+                    sx={{
+                        borderTop: `1px solid rgba(0,0,0,0.04)`,
+                        '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': {
+                            fontSize: '13px',
+                            color: 'text.secondary',
+                            fontWeight: 500
+                        },
+                        '.MuiTablePagination-select': {
+                            fontSize: '13px',
+                            fontWeight: 500
+                        }
+                    }}
+                />
             </Card>
 
             {/* Modal for New Employee */}
@@ -598,6 +792,7 @@ export default function EmployeePage() {
                                 <Button
                                     variant="contained"
                                     onClick={activeStep < 2 ? handleNext : formik.handleSubmit}
+                                    disabled={!isStepComplete()}
                                     sx={{
                                         backgroundColor: '#2D3FE2',
                                         borderRadius: '12px',
@@ -606,7 +801,11 @@ export default function EmployeePage() {
                                         textTransform: 'none',
                                         fontWeight: 600,
                                         fontSize: '16px',
-                                        '&:hover': { backgroundColor: '#1E2BB8' }
+                                        '&:hover': { backgroundColor: '#1E2BB8' },
+                                        '&.Mui-disabled': {
+                                            backgroundColor: '#E5E7EB',
+                                            color: '#9CA3AF'
+                                        }
                                     }}
                                 >
                                     {activeStep < 2 ? "Next" : "Submit"}

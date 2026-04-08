@@ -17,6 +17,7 @@ import { palette } from "@/theme";
 import { adminApi } from "@/services/api";
 import { useFormik, FormikProvider, FieldArray } from "formik";
 import * as Yup from "yup";
+import { gstinRegex, phoneRegex, pincodeRegex, ifscRegex } from "@/utils/validationSchemas";
 
 export default function CompanyPage() {
     const [searchQuery, setSearchQuery] = useState("");
@@ -75,12 +76,12 @@ export default function CompanyPage() {
     const companyValidationSchema = Yup.object({
         name: Yup.string().required("Company name is required"),
         invoiceInitial: Yup.string().required("Invoice initial is required"),
-        gstn: Yup.string().matches(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, "Invalid GSTIN format").required("GSTN is required"),
-        addressLine1: Yup.string().required("Address is required"),
+        gstn: Yup.string().matches(gstinRegex, "Invalid GSTIN format").required("GSTN is required"),
+        addressLine1: Yup.string().max(50, "Address cannot exceed 50 characters").required("Address is required"),
         district: Yup.string().required("District is required"),
         state: Yup.string().required("State is required"),
-        pincode: Yup.string().matches(/^[0-9]{6}$/, "Pincode must be 6 digits").required("Pincode is required"),
-        phone: Yup.string().matches(/^[0-9]{10,12}$/, "Phone must be 10-12 digits").required("Phone is required"),
+        pincode: Yup.string().matches(pincodeRegex, "Pincode must be 6 digits").required("Pincode is required"),
+        phone: Yup.string().matches(phoneRegex, "Phone must be 10-12 digits").required("Phone is required"),
         emailId: Yup.string().email("Invalid email format"),
     });
 
@@ -285,16 +286,33 @@ export default function CompanyPage() {
     };
     const handleBack = () => setActiveStep((prev) => prev - 1);
 
+    const isStepComplete = () => {
+        if (activeStep === 0) {
+            const required = ['name', 'invoiceInitial', 'gstn', 'addressLine1', 'district', 'state', 'pincode', 'phone'];
+            const errors = formik.errors;
+            return required.every(field => !!formik.values[field]) && !required.some(field => !!errors[field]);
+        }
+        if (activeStep === 1) {
+            // Must have added at least one branch
+            return formik.values.branches.length > 0;
+        }
+        if (activeStep === 2) {
+            // Must have added at least one bank account
+            return formik.values.bankAccounts.length > 0;
+        }
+        return true;
+    };
+
     const handleAddBranch = () => {
         if (!currentBranch.name || !currentBranch.plantType || !currentBranch.contactNo || !currentBranch.addressLine1 || !currentBranch.district || !currentBranch.state || !currentBranch.pincode) {
             alert("Please fill in the required fields: Branch Name, Plant Type, Contact No, Address Line 1, District, State, and Pincode.");
             return;
         }
-        if (!/^[0-9]{10,12}$/.test(currentBranch.contactNo)) {
+        if (!phoneRegex.test(currentBranch.contactNo)) {
             alert("Contact No must be 10 to 12 digits.");
             return;
         }
-        if (!/^[0-9]{6}$/.test(currentBranch.pincode)) {
+        if (!pincodeRegex.test(currentBranch.pincode)) {
             alert("Pincode must be exactly 6 digits.");
             return;
         }
@@ -325,6 +343,14 @@ export default function CompanyPage() {
     const handleAddBankAccount = () => {
         if (!currentBankAccount.accountName || !currentBankAccount.accountNumber || !currentBankAccount.bankName || !currentBankAccount.ifscCode) {
             alert("Please fill in the required fields: Account Name, Account No, Bank Name, and IFSC.");
+            return;
+        }
+        if (!/^[0-9]{9,18}$/.test(currentBankAccount.accountNumber)) {
+            alert("Account Number must be 9-18 digits.");
+            return;
+        }
+        if (!ifscRegex.test(currentBankAccount.ifscCode)) {
+            alert("Invalid IFSC Code format.");
             return;
         }
 
@@ -463,8 +489,18 @@ export default function CompanyPage() {
                         variant="outlined"
                         value={value}
                         onChange={(e) => {
-                            if (name === 'branch' || name === 'bankName') {
+                            const letterOnlyFields = ['name', 'district', 'state', 'branch', 'bankName'];
+                            const numericOnlyFields = ['phone', 'alternatePhone', 'pincode'];
+                            const uppercaseFields = ['gstn'];
+                            
+                            if (letterOnlyFields.includes(name)) {
                                 const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                                formik.setFieldValue(name, val);
+                            } else if (numericOnlyFields.includes(name)) {
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                formik.setFieldValue(name, val);
+                            } else if (uppercaseFields.includes(name)) {
+                                const val = e.target.value.toUpperCase();
                                 formik.setFieldValue(name, val);
                             } else {
                                 formik.handleChange(e);
@@ -473,6 +509,7 @@ export default function CompanyPage() {
                         onBlur={formik.handleBlur}
                         error={!!error}
                         helperText={error}
+                        inputProps={name.includes('addressLine') ? { maxLength: 50 } : {}}
                         sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
                     />
                 )}
@@ -526,7 +563,25 @@ export default function CompanyPage() {
                         type={type}
                         placeholder={placeholder}
                         value={value}
-                        onChange={(e) => onChange(e.target.value)}
+                        onChange={(e) => {
+                            const letterLabels = ["Name", "State", "District", "Branch Name", "Bank Name", "Account Name"];
+                            const numericLabels = ["Contact No", "Pincode", "Account No", "Alternate No"];
+                            const uppercaseLabels = ["IFSC", "GSTN"];
+                            
+                            if (letterLabels.some(l => label.includes(l))) {
+                                const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                                onChange(val);
+                            } else if (numericLabels.some(l => label.includes(l))) {
+                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                onChange(val);
+                            } else if (uppercaseLabels.some(l => label.includes(l))) {
+                                const val = e.target.value.toUpperCase();
+                                onChange(val);
+                            } else {
+                                onChange(e.target.value);
+                            }
+                        }}
+                        inputProps={label.includes('Address') ? { maxLength: 50 } : {}}
                         sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB' } }}
                     />
                 )}
@@ -930,10 +985,15 @@ export default function CompanyPage() {
                     onPageChange={handleChangePage}
                     onRowsPerPageChange={handleChangeRowsPerPage}
                     sx={{
-                        borderTop: `1px solid ${palette.divider}`,
+                        borderTop: `1px solid rgba(0,0,0,0.04)`,
                         '.MuiTablePagination-selectLabel, .MuiTablePagination-displayedRows': {
                             fontSize: '13px',
-                            color: palette.text.secondary
+                            color: 'text.secondary',
+                            fontWeight: 500
+                        },
+                        '.MuiTablePagination-select': {
+                            fontSize: '13px',
+                            fontWeight: 500
                         }
                     }}
                 />
@@ -995,10 +1055,7 @@ export default function CompanyPage() {
                                 <Button
                                     variant="contained"
                                     onClick={activeStep < 2 ? handleNext : formik.handleSubmit}
-                                    disabled={
-                                        (activeStep === 1 && showBranchForm && formik.values.branches.length === 0) ||
-                                        (activeStep === 2 && showBankAccountForm && formik.values.bankAccounts.length === 0)
-                                    }
+                                    disabled={!isStepComplete()}
                                     sx={{
                                         backgroundColor: '#2D3FE2',
                                         borderRadius: '12px',

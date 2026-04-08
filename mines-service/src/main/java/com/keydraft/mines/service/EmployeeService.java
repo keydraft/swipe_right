@@ -126,7 +126,14 @@ public class EmployeeService {
 
         emp.setFirstName(req.getFirstName());
         emp.setLastName(req.getLastName());
-        emp.setGender(Gender.valueOf(req.getGender().toUpperCase()));
+        
+        // Fix for Gender enum mismatch (others -> OTHERS vs OTHER)
+        if (req.getGender() != null) {
+            String genderStr = req.getGender().toUpperCase();
+            if ("OTHERS".equals(genderStr)) genderStr = "OTHER";
+            emp.setGender(Gender.valueOf(genderStr));
+        }
+        
         emp.setDateOfBirth(req.getDateOfBirth());
         emp.setDateOfJoining(req.getDateOfJoining());
         emp.setContactNumber(req.getContactNumber());
@@ -162,7 +169,7 @@ public class EmployeeService {
         // --- HIERARCHY ---
         Role roleObj = null;
         if (req.getRole() != null) {
-            roleObj = roleRepository.findByName(req.getRole()).orElse(null);
+            roleObj = roleRepository.findByName(req.getRole().toUpperCase()).orElse(null);
             emp.setDesignation(roleObj);
         }
 
@@ -192,7 +199,12 @@ public class EmployeeService {
                 user.setPasswordResetRequired(true); // Force change on first login
             }
             
-            if (roleObj != null) user.setRole(roleObj);
+            if (roleObj != null) {
+                user.setRole(roleObj);
+            } else {
+                throw new RuntimeException("Cannot create user account: Role '" + req.getRole() + "' not found in system.");
+            }
+            
             user = userRepository.save(user);
             emp.setUser(user);
 

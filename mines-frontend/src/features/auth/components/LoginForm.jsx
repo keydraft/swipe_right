@@ -21,6 +21,8 @@ import { palette } from "@/theme";
 import { authApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
+import Cookies from "js-cookie";
+import { ability, defineAbilitiesFor } from "@/utils/ability";
 
 export default function LoginForm() {
     const router = useRouter();
@@ -46,7 +48,20 @@ export default function LoginForm() {
             try {
                 const response = await authApi.login(values.username, values.password);
                 if (response.success) {
-                    localStorage.setItem("user", JSON.stringify(response.data));
+                    const userData = response.data;
+                    const permissions = userData.permissions || [];
+                    const role = userData.role || '';
+                    
+                    // 1. Store user data
+                    localStorage.setItem("user", JSON.stringify(userData));
+                    
+                    // 2. Store permissions and role in cookies
+                    Cookies.set("permissions", JSON.stringify(permissions), { expires: 1 });
+                    Cookies.set("role", role, { expires: 1 });
+                    
+                    // 3. Update CASL ability
+                    ability.update(defineAbilitiesFor(permissions, role).rules);
+
                     router.push("/dashboard");
                 } else {
                     setSubmitError(response.message || "Login failed");

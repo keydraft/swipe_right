@@ -1,7 +1,6 @@
 package com.keydraft.mines.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.keydraft.mines.dto.ApiResponse;
 import com.keydraft.mines.dto.EmployeeRequest;
 import com.keydraft.mines.dto.EmployeeResponse;
@@ -21,6 +20,7 @@ import java.util.UUID;
 public class EmployeeController {
 
     private final EmployeeService employeeService;
+    private final ObjectMapper objectMapper;
 
     @PostMapping(value = "/upsert", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponse<EmployeeResponse>> upsertEmployee(
@@ -31,9 +31,8 @@ public class EmployeeController {
             @RequestPart(value = "drivingLicense", required = false) MultipartFile drivingLicense
     ) throws Exception {
         
-        ObjectMapper mapper = new ObjectMapper();
-        mapper.registerModule(new JavaTimeModule());
-        EmployeeRequest request = mapper.readValue(employeeJson, EmployeeRequest.class);
+        objectMapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        EmployeeRequest request = objectMapper.readValue(employeeJson, EmployeeRequest.class);
 
         // Store files and set paths in service call
         EmployeeResponse response = employeeService.upsertEmployeeWithFiles(request, passbook, aadhaar, pan, drivingLicense);

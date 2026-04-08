@@ -26,6 +26,7 @@ public class AdminService {
     private final BranchRepository branchRepository;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
+    private final PermissionRepository permissionRepository;
 
     // ==================== MAPPING HELPERS ====================
 
@@ -115,7 +116,12 @@ public class AdminService {
     }
 
     private RoleResponse mapRoleResponse(Role role) {
-        return RoleResponse.builder().id(role.getId()).name(role.getName()).rank(role.getRank()).build();
+        return RoleResponse.builder()
+                .id(role.getId())
+                .name(role.getName())
+                .rank(role.getRank())
+                .permissions(role.getPermissions().stream().map(Permission::getName).collect(Collectors.toList()))
+                .build();
     }
 
     // ==================== COMPANY OPERATIONS ====================
@@ -252,17 +258,77 @@ public class AdminService {
 
     @Transactional
     public List<RoleResponse> seedDefaultRoles() {
+        // 1. Define standard permissions
+        String[][] permissionData = {
+            {"READ_COMPANY", "Can view company details"},
+            {"WRITE_COMPANY", "Can create/update companies"},
+            {"DELETE_COMPANY", "Can delete companies"},
+            {"READ_USER", "Can view user accounts"},
+            {"WRITE_USER", "Can create/update user accounts"},
+            {"READ_EMPLOYEE", "Can view employee data"},
+            {"WRITE_EMPLOYEE", "Can manage employees"},
+            {"READ_PRODUCT", "Can view master product list"},
+            {"WRITE_PRODUCT", "Can manage products"},
+            {"READ_CUSTOMER", "Can view customer profiles"},
+            {"READ_POS", "Can access point of sale"},
+            {"WRITE_POS", "Can perform billing and coupon issuance"},
+            {"READ_BILLING", "Can view billing and coupon records"},
+            {"READ_DASHBOARD", "Can view the main dashboard"}
+        };
+
+        java.util.Map<String, Permission> permMap = new java.util.HashMap<>();
+        for (String[] p : permissionData) {
+            Permission perm = permissionRepository.findByName(p[0])
+                .orElseGet(() -> permissionRepository.save(Permission.builder().name(p[0]).description(p[1]).build()));
+            permMap.put(p[0], perm);
+        }
+
+        // 2. Define roles and their associated permissions
         String[] ns = { "ADMIN", "PARTNER", "MANAGER", "ACCOUNTANT", "SITEOPERATOR", "WEIGHMENT_OPERATOR" };
         int[] ranks = { 0, 1, 2, 3, 4, 5 };
+        
         java.util.List<RoleResponse> res = new java.util.ArrayList<>();
         for (int i = 0; i < ns.length; i++) {
             final String name = ns[i];
             final int rank = ranks[i];
+            
             Role r = roleRepository.findByName(name).orElseGet(() -> roleRepository.save(Role.builder().name(name).rank(rank).build()));
             if (r.getRank() != rank) {
                 r.setRank(rank);
-                r = roleRepository.save(r);
             }
+
+            // Assign permissions to roles
+            java.util.Set<Permission> perms = r.getPermissions();
+            perms.clear(); // Refresh permissions alignment
+            
+            // Everyone can see the Dashboard
+            perms.add(permMap.get("READ_DASHBOARD"));
+
+            if (name.equals("ADMIN")) {
+                perms.addAll(permMap.values());
+            } else if (name.equals("MANAGER") || name.equals("PARTNER")) {
+                perms.add(permMap.get("READ_COMPANY"));
+                perms.add(permMap.get("WRITE_COMPANY"));
+                perms.add(permMap.get("READ_USER"));
+                perms.add(permMap.get("READ_EMPLOYEE"));
+                perms.add(permMap.get("WRITE_EMPLOYEE"));
+                perms.add(permMap.get("READ_PRODUCT"));
+                perms.add(permMap.get("WRITE_PRODUCT"));
+                perms.add(permMap.get("READ_CUSTOMER"));
+                perms.add(permMap.get("READ_POS"));
+                perms.add(permMap.get("WRITE_POS"));
+            } else if (name.equals("ACCOUNTANT")) {
+                perms.add(permMap.get("READ_COMPANY"));
+                perms.add(permMap.get("READ_CUSTOMER"));
+                perms.add(permMap.get("READ_BILLING")); // If you have this permission defined
+            } else if (name.equals("SITEOPERATOR") || name.equals("WEIGHMENT_OPERATOR")) {
+                perms.add(permMap.get("READ_COMPANY"));
+                perms.add(permMap.get("READ_PRODUCT"));
+                perms.add(permMap.get("READ_POS"));
+                perms.add(permMap.get("WRITE_POS"));
+            }
+            
+            r = roleRepository.save(r);
             res.add(mapRoleResponse(r));
         }
         return res;

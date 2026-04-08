@@ -22,6 +22,7 @@ public class RoleResponse {
     @Schema(description = "Name of the role", example = "MANAGER")
     private String name;
     private Integer rank;
+    private java.util.List<String> permissions;
 
     @Schema(description = "Timestamp when the role was created")
     private LocalDateTime createdAt;

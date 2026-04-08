@@ -11,12 +11,15 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import java.util.Set;
+import java.util.stream.Collectors;
+import com.keydraft.mines.entity.Permission;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
 
-    public record AuthResult(String token, String username, String role, boolean resetRequired) {}
+    public record AuthResult(String token, String username, String role, Set<String> permissions, boolean resetRequired) {}
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -47,7 +50,8 @@ public class AuthService {
         userRepository.save(user);
 
         var jwtToken = jwtUtils.generateToken(user);
-        return new AuthResult(jwtToken, user.getUsername(), user.getRole().getName(), user.isPasswordResetRequired());
+        Set<String> permissions = user.getRole().getPermissions().stream().map(Permission::getName).collect(Collectors.toSet());
+        return new AuthResult(jwtToken, user.getUsername(), user.getRole().getName(), permissions, user.isPasswordResetRequired());
     }
 
     public AuthResult login(LoginRequest request) {
@@ -58,7 +62,8 @@ public class AuthService {
                 .orElseThrow();
 
         var jwtToken = jwtUtils.generateToken(user);
+        Set<String> permissions = user.getRole().getPermissions().stream().map(Permission::getName).collect(Collectors.toSet());
 
-        return new AuthResult(jwtToken, user.getUsername(), user.getRole().getName(), user.isPasswordResetRequired());
+        return new AuthResult(jwtToken, user.getUsername(), user.getRole().getName(), permissions, user.isPasswordResetRequired());
     }
 }

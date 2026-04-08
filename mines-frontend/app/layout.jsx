@@ -1,5 +1,6 @@
 import { ThemeRegistry } from "@/theme";
 import "./globals.css";
+import { AbilityProvider } from "@/context/AbilityContext";
 
 export const metadata = {
     title: "Swipe Right",
@@ -29,7 +30,9 @@ export default function RootLayout({ children }) {
                 />
             </head>
             <body>
-                <ThemeRegistry>{children}</ThemeRegistry>
+                <AbilityProvider>
+                    <ThemeRegistry>{children}</ThemeRegistry>
+                </AbilityProvider>
             </body>
         </html>
     );

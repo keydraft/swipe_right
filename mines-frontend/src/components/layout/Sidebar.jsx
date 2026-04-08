@@ -26,15 +26,20 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { palette } from "@/theme";
 
+import { useContext } from "react";
+import { AbilityContext } from "@/context/AbilityContext";
+import { useAbility } from "@casl/react";
+
 const DRAWER_WIDTH = 280;
 
 export default function Sidebar() {
     const router = useRouter();
     const pathname = usePathname();
     const [openMaster, setOpenMaster] = useState(false);
+    const ability = useAbility(AbilityContext);
 
     const menuItems = [
-        { text: "Dashboard", icon: <AspectRatioOutlined />, path: "/dashboard" },
+        { text: "Dashboard", icon: <AspectRatioOutlined />, path: "/dashboard", action: 'read', subject: 'Dashboard' },
         {
             text: "Master",
             icon: <GridViewRounded />,
@@ -42,16 +47,24 @@ export default function Sidebar() {
             open: openMaster,
             onClick: () => setOpenMaster(!openMaster),
             subItems: [
-                { text: "Company", path: "/dashboard/master/company" },
-                { text: "Employee", path: "/dashboard/master/employee" },
-                { text: "Customer", path: "/dashboard/master/customer" },
-                { text: "Product", path: "/dashboard/master/product" },
-                { text: "Truck", path: "/dashboard/master/truck" },
+                { text: "Company", path: "/dashboard/master/company", action: 'read', subject: 'Company' },
+                { text: "Employee", path: "/dashboard/master/employee", action: 'read', subject: 'Employee' },
+                { text: "Customer", path: "/dashboard/master/customer", action: 'read', subject: 'Customer' },
+                { text: "Product", path: "/dashboard/master/product", action: 'read', subject: 'Product' },
+                { text: "Truck", path: "/dashboard/master/truck", action: 'read', subject: 'Truck' },
             ],
         },
-        { text: "POS", icon: <SignalCellularAltRounded />, path: "/dashboard/pos" },
-        { text: "Billing and Coupon", icon: <PaymentsOutlined />, path: "/dashboard/billing" },
+        { text: "POS", icon: <SignalCellularAltRounded />, path: "/dashboard/pos", action: 'read', subject: 'Pos' },
+        { text: "Billing and Coupon", icon: <PaymentsOutlined />, path: "/dashboard/billing", action: 'read', subject: 'Billing' },
     ];
+
+    const filteredMenuItems = menuItems.filter(item => {
+        if (item.subItems) {
+            item.subItems = item.subItems.filter(sub => ability.can(sub.action || 'read', sub.subject || 'all'));
+            return item.subItems.length > 0;
+        }
+        return ability.can(item.action || 'read', item.subject || 'all');
+    });
 
     return (
         <Drawer
@@ -125,7 +138,7 @@ export default function Sidebar() {
 
             {/* ── Nav Items ───────────────────────────────────────── */}
             <List sx={{ px: 2 }}>
-                {menuItems.map((item) => {
+                {filteredMenuItems.map((item) => {
                     const isActive = !item.isDropdown && pathname === item.path;
                     const isDropdownActive = item.isDropdown && item.open;
 
