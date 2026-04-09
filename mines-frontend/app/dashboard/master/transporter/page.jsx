@@ -71,7 +71,7 @@ export default function TransporterPage() {
     const formik = useFormik({
         initialValues: {
             name: "",
-            iCode: "",
+            icode: "",
             gstin: "",
             phone: "",
             address: {
@@ -112,7 +112,7 @@ export default function TransporterPage() {
         setEditingId(transporter.id);
         formik.setValues({
             name: transporter.name || "",
-            iCode: transporter.iCode || "",
+            icode: transporter.icode || "",
             gstin: transporter.gstin || "",
             phone: transporter.phone || "",
             address: transporter.address || {
@@ -166,7 +166,7 @@ export default function TransporterPage() {
                     variant="outlined"
                     value={value || ""}
                     onChange={(e) => {
-                        if (field === "iCode" || field === "gstin") {
+                        if (field === "icode" || field === "gstin") {
                             formik.setFieldValue(field, e.target.value.toUpperCase());
                         } else {
                             formik.handleChange(e);
@@ -282,7 +282,7 @@ export default function TransporterPage() {
                                 </TableRow>
                             ) : transporters.map((t) => (
                                 <TableRow key={t.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
-                                    <TableCell sx={{ fontWeight: 600, color: '#0057FF' }}>{t.iCode}</TableCell>
+                                    <TableCell sx={{ fontWeight: 600, color: '#0057FF' }}>{t.icode}</TableCell>
                                     <TableCell sx={{ fontWeight: 500 }}>{t.name}</TableCell>
                                     <TableCell>{t.phone}</TableCell>
                                     <TableCell>{t.gstin || '-'}</TableCell>
@@ -405,6 +405,9 @@ export default function TransporterPage() {
                                     <Grid container spacing={3}>
                                         <Grid item xs={12} md={6}>
                                             {renderField("Transporter Name", "Enter name", "text", "name")}
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            {renderField("Transporter Code", "Enter code", "text", "icode")}
                                         </Grid>
                                         <Grid item xs={12} md={6}>
                                             {renderField("Phone Number", "Enter phone", "text", "phone")}

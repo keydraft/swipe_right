@@ -171,13 +171,13 @@ public class EmployeeService {
 
         // --- FILE STORAGE (LOCAL) ---
         if (passbook != null)
-            emp.setPassbookFilePath(fileStorageService.storeFile(passbook));
+            emp.setPassbookFilePath(fileStorageService.storeFile(passbook, "employees"));
         if (aadhaar != null)
-            emp.setAadhaarFilePath(fileStorageService.storeFile(aadhaar));
+            emp.setAadhaarFilePath(fileStorageService.storeFile(aadhaar, "employees"));
         if (pan != null)
-            emp.setPanFilePath(fileStorageService.storeFile(pan));
+            emp.setPanFilePath(fileStorageService.storeFile(pan, "employees"));
         if (dl != null)
-            emp.setDrivingLicenseFilePath(fileStorageService.storeFile(dl));
+            emp.setDrivingLicenseFilePath(fileStorageService.storeFile(dl, "employees"));
 
         emp.setAadhaarNumber(req.getAadhaarNumber());
         emp.setPanNumber(req.getPanNumber());

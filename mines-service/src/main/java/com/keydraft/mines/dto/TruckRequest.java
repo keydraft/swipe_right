@@ -14,7 +14,7 @@ import java.util.UUID;
 public class TruckRequest {
     private OwnershipType ownershipType;
     private String truckNo;
-    private String ownerName;
+    private String registerName;
     private UUID transporterId;
     private UUID customerId;
     private String make;

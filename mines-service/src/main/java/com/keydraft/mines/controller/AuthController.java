@@ -36,6 +36,7 @@ public class AuthController {
                 .role(result.role())
                 .permissions(result.permissions())
                 .resetRequired(result.resetRequired())
+                .companies(result.companies())
                 .build();
 
         return ResponseEntity.ok(ApiResponse.success(body, "Login successful"));
@@ -69,6 +70,7 @@ public class AuthController {
                 .role(result.role())
                 .permissions(result.permissions())
                 .resetRequired(result.resetRequired())
+                .companies(result.companies())
                 .build();
 
         return ResponseEntity.ok(ApiResponse.success(body, "Registration successful"));

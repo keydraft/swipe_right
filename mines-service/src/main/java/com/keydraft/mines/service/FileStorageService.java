@@ -13,46 +13,35 @@ import java.util.UUID;
 @Service
 public class FileStorageService {
 
-    private final String uploadDir = "uploads/employees";
+    private final String baseUploadDir = "uploads";
 
     public FileStorageService() {
-        File directory = new File(uploadDir);
+        File directory = new File(baseUploadDir);
         if (!directory.exists()) {
-            boolean created = directory.mkdirs();
-            if (!created) {
-                System.err.println("Fatal: Could not create upload directory " + uploadDir);
-            }
+            directory.mkdirs();
         }
     }
 
-    /**
-     * Stores a file locally and returns the stored filename.
-     */
-    public String storeFile(MultipartFile file) {
-        if (file == null || file.isEmpty())
-            return null;
-
+    public String storeFile(MultipartFile file, String subDir) {
+        if (file == null || file.isEmpty()) return null;
         try {
+            Path uploadPath = Paths.get(baseUploadDir).resolve(subDir);
+            if (!Files.exists(uploadPath)) Files.createDirectories(uploadPath);
+
             String originalFileName = file.getOriginalFilename();
-            String extension = "";
-            if (originalFileName != null && originalFileName.contains(".")) {
-                extension = originalFileName.substring(originalFileName.lastIndexOf("."));
-            }
+            String extension = (originalFileName != null && originalFileName.contains(".")) ? 
+                originalFileName.substring(originalFileName.lastIndexOf(".")) : "";
 
             String storedFileName = UUID.randomUUID().toString() + extension;
-            Path targetPath = Paths.get(uploadDir).resolve(storedFileName);
+            Path targetPath = uploadPath.resolve(storedFileName);
             Files.copy(file.getInputStream(), targetPath);
-
             return storedFileName;
         } catch (IOException e) {
             throw new RuntimeException("Could not store file", e);
         }
     }
 
-    /**
-     * Returns the physical path for a stored filename.
-     */
-    public Path getFilePath(String fileName) {
-        return Paths.get(uploadDir).resolve(fileName);
+    public Path getFilePath(String fileName, String subDir) {
+        return Paths.get(baseUploadDir).resolve(subDir).resolve(fileName);
     }
 }

@@ -13,7 +13,7 @@ public class TruckResponse {
     private UUID id;
     private OwnershipType ownershipType;
     private String truckNo;
-    private String ownerName;
+    private String registerName;
     private UUID transporterId;
     private String transporterName;
     private UUID customerId;

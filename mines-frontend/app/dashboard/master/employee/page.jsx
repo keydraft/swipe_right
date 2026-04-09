@@ -21,8 +21,15 @@ import { employeeApi, adminApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 import { aadhaarRegex, panRegex, phoneRegex, pincodeRegex, ifscRegex } from "@/utils/validationSchemas";
+import Cookies from "js-cookie";
 
 export default function EmployeePage() {
+    const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
+    const associations = user.companies || [];
+    const defaultCompanyId = associations.length > 0 ? associations[0].companyId : "";
+    const defaultBranchId = associations.length > 0 ? associations[0].branchId : "";
+
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
     const [activeStep, setActiveStep] = useState(0);
@@ -123,15 +130,13 @@ export default function EmployeePage() {
     const fetchInitialData = async () => {
         setIsLoading(true);
         try {
-            const [roleResp, compResp] = await Promise.all([
-                adminApi.getRoles(),
-                adminApi.getCompanies(0, 500)
-            ]);
-
+            const roleResp = await adminApi.getRoles();
             if (roleResp.success) setRoles(roleResp.data);
-            if (compResp.success) setCompanies(compResp.data.content);
 
-            // Get current user rank from localStorage
+            if (userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') {
+                const compResp = await adminApi.getCompanies(0, 500);
+                if (compResp.success) setCompanies(compResp.data.content);
+            }
             const savedUser = localStorage.getItem("user");
             if (savedUser) {
                 const user = JSON.parse(savedUser);
@@ -232,6 +237,20 @@ export default function EmployeePage() {
         formik.resetForm();
         setFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
         setExistingFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
+        
+        if (userRole !== 'ROLE_ADMIN' && userRole !== 'ADMIN') {
+            formik.setFieldValue("companyId", defaultCompanyId);
+            formik.setFieldValue("branchId", defaultBranchId);
+            
+            // Set available branches for the UI logic
+            const company = companies.find(c => c.id === defaultCompanyId);
+            if (company) {
+                setAvailableBranches(company.branches || []);
+            } else if (associations.length > 0) {
+                 setAvailableBranches([{id: defaultBranchId, name: associations[0].branchName}]);
+            }
+        }
+
         setOpenModal(true);
         setShowSuccess(false);
         setActiveStep(0);
@@ -245,11 +264,12 @@ export default function EmployeePage() {
 
         // Find the company to populate its branches
         const compId = employee.company?.id || employee.companyId || "";
-        const company = companies.find(c => c.id === compId);
-        if (company) {
-            setAvailableBranches(company.branches || []);
+        if (userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') {
+            const company = companies.find(c => c.id === compId);
+            setAvailableBranches(company ? (company.branches || []) : []);
         } else {
-            setAvailableBranches([]);
+            const assoc = associations.find(a => a.companyId === compId);
+            setAvailableBranches(assoc ? [{ id: assoc.branchId, name: assoc.branchName }] : []);
         }
 
         formik.setValues({
@@ -653,8 +673,12 @@ export default function EmployeePage() {
                         <Box sx={{ width: itemWidth }}>{renderField("Last Name", "Enter the last name", false, "text", "lastName")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Gender", "", false, "radio", "gender")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Role", "Select role", true, "text", "role")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Company", "Select company", true, "text", "companyId")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Branch", "Select branch", true, "text", "branchId")}</Box>
+                        {(userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') && (
+                            <>
+                                <Box sx={{ width: itemWidth }}>{renderField("Company", "Select company", true, "text", "companyId")}</Box>
+                                <Box sx={{ width: itemWidth }}>{renderField("Branch", "Select branch", true, "text", "branchId")}</Box>
+                            </>
+                        )}
                         <Box sx={{ width: itemWidth }}>{renderField("Date of Birth", "yyyy-mm-dd", false, "date", "dateOfBirth")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Date of Joining", "yyyy-mm-dd", false, "date", "dateOfJoining")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Address Line 1", "Enter address", false, "text", "addressLine1")}</Box>

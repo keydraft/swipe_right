@@ -14,7 +14,7 @@ public class BranchRequest {
     @NotBlank(message = "Site type is required (PRODUCTION or OFFICE)")
     private String siteType;
 
-    @NotBlank(message = "Branch type is required (CRUSHER, YARD, QUARRY, INTEGRATED)")
+    @NotBlank(message = "Branch type is required (CRUSHER, YARD, QUARRY, INTERGAT)")
     private String branchType;
 
     @NotBlank(message = "Branch name is required")

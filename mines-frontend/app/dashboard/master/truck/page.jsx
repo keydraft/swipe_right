@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
     Box, Typography, Card, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, IconButton, Button,
@@ -11,7 +11,8 @@ import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, 
     VisibilityOutlined as ViewIcon, EditOutlined as EditIcon, 
     DeleteOutline as DeleteIcon, FileDownloadOutlined as DownloadIcon,
-    PrintOutlined as PrintIcon, SortOutlined as SortIcon
+    PrintOutlined as PrintIcon, SortOutlined as SortIcon,
+    CloudUploadOutlined as UploadIcon
 } from "@mui/icons-material";
 import { palette } from "@/theme";
 import { truckApi, transporterApi, customerApi } from "@/services/api";
@@ -29,6 +30,23 @@ export default function TruckPage() {
     const [editingId, setEditingId] = useState(null);
     const [showSuccess, setShowSuccess] = useState(false);
 
+    // File state
+    const [files, setFiles] = useState({
+        rcFront: null,
+        rcBack: null,
+        insurance: null,
+        permit: null,
+        fc: null
+    });
+
+    const fileRefs = {
+        rcFront: useRef(),
+        rcBack: useRef(),
+        insurance: useRef(),
+        permit: useRef(),
+        fc: useRef()
+    };
+
     // Pagination State
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -37,7 +55,6 @@ export default function TruckPage() {
     const fetchInitialData = async () => {
         setIsLoading(true);
         try {
-            // Fetch dropdown data (non-paginated or large limit)
             const [transResp, custResp] = await Promise.all([
                 transporterApi.getAll(0, 1000),
                 customerApi.getAll(0, 1000)
@@ -88,6 +105,7 @@ export default function TruckPage() {
 
     const truckValidationSchema = Yup.object({
         ownershipType: Yup.string().required("Ownership type is required"),
+        truckNo: Yup.string().required("Truck number is required"),
         tareWeight: Yup.number().typeError("Must be a number").required("Tare weight is required"),
     });
 
@@ -95,7 +113,7 @@ export default function TruckPage() {
         initialValues: {
             truckNo: "",
             ownershipType: "OWN",
-            ownerName: "",
+            registerName: "",
             transporterId: "",
             customerId: "",
             make: "",
@@ -103,8 +121,11 @@ export default function TruckPage() {
             engineNo: "",
             chassisNo: "",
             tareWeight: "",
-            usageType: "",
-            fuelType: ""
+            usageType: "Commercial",
+            fuelType: "Diesel",
+            insuranceValidity: "",
+            permitValidity: "",
+            fcValidity: ""
         },
         validationSchema: truckValidationSchema,
         onSubmit: async (values) => {
@@ -116,7 +137,7 @@ export default function TruckPage() {
                     tareWeight: parseFloat(values.tareWeight) || 0
                 };
 
-                const response = await truckApi.upsert(payload, editingId);
+                const response = await truckApi.upsert(payload, files, editingId);
                 if (response.success) {
                     setShowSuccess(true);
                     setTimeout(() => {
@@ -130,10 +151,17 @@ export default function TruckPage() {
         },
     });
 
+    const handleFileChange = (field, e) => {
+        if (e.target.files?.[0]) {
+            setFiles(prev => ({ ...prev, [field]: e.target.files[0] }));
+        }
+    };
+
     const handleOpenModal = () => {
         setIsEditing(false);
         setEditingId(null);
         formik.resetForm();
+        setFiles({ rcFront: null, rcBack: null, insurance: null, permit: null, fc: null });
         setOpenModal(true);
         setShowSuccess(false);
     };
@@ -144,7 +172,7 @@ export default function TruckPage() {
         formik.setValues({
             truckNo: truck.truckNo || "",
             ownershipType: truck.ownershipType || "OWN",
-            ownerName: truck.ownerName || "",
+            registerName: truck.registerName || "",
             transporterId: truck.transporterId || "",
             customerId: truck.customerId || "",
             make: truck.make || "",
@@ -152,9 +180,13 @@ export default function TruckPage() {
             engineNo: truck.engineNo || "",
             chassisNo: truck.chassisNo || "",
             tareWeight: truck.tareWeight || "",
-            usageType: truck.usageType || "",
-            fuelType: truck.fuelType || ""
+            usageType: truck.usageType || "Commercial",
+            fuelType: truck.fuelType || "Diesel",
+            insuranceValidity: truck.insuranceValidity || "",
+            permitValidity: truck.permitValidity || "",
+            fcValidity: truck.fcValidity || ""
         });
+        setFiles({ rcFront: null, rcBack: null, insurance: null, permit: null, fc: null });
         setOpenModal(true);
         setShowSuccess(false);
     };
@@ -176,6 +208,32 @@ export default function TruckPage() {
         setOpenModal(false);
         formik.resetForm();
     };
+
+    const renderFileUpload = (label, field) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <input
+                type="file"
+                ref={fileRefs[field]}
+                style={{ display: 'none' }}
+                onChange={(e) => handleFileChange(field, e)}
+            />
+            <Button
+                variant="contained"
+                startIcon={<UploadIcon />}
+                onClick={() => fileRefs[field].current.click()}
+                sx={{
+                    background: files[field] ? '#16A34A' : '#0057FF',
+                    textTransform: 'none',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    width: '100%'
+                }}
+            >
+                {files[field] ? files[field].name.substring(0, 15) : label}
+            </Button>
+        </Box>
+    );
 
     const renderField = (label, placeholder, isSelect = false, type = "text", field = "", options = []) => {
         const value = formik.values[field] || "";
@@ -290,11 +348,6 @@ export default function TruckPage() {
                             <PrintIcon sx={{ color: palette.text.secondary }} />
                         </IconButton>
                     </Tooltip>
-                    <Tooltip title="Sort">
-                        <IconButton sx={{ backgroundColor: palette.background.default, border: `1px solid ${palette.divider}`, borderRadius: '8px' }}>
-                            <SortIcon sx={{ color: palette.text.secondary }} />
-                        </IconButton>
-                    </Tooltip>
                 </Box>
             </Box>
 
@@ -343,7 +396,7 @@ export default function TruckPage() {
                                         </Box>
                                     </TableCell>
                                     <TableCell>
-                                        {t.ownershipType === 'OWN' ? (t.ownerName || 'Company') :
+                                        {t.ownershipType === 'OWN' ? (t.registerName || 'Company') :
                                          t.ownershipType === 'TRANSPORTER' ? t.transporterName :
                                          t.customerName}
                                     </TableCell>
@@ -430,7 +483,7 @@ export default function TruckPage() {
                     <Box sx={{
                         backgroundColor: showSuccess ? 'transparent' : '#fff',
                         borderRadius: '16px',
-                        p: showSuccess ? 0 : { xs: 3, sm: 6 },
+                        p: showSuccess ? 0 : { xs: 3, sm: 4 },
                         boxShadow: showSuccess ? 'none' : '0px 2px 12px rgba(0,0,0,0.03)',
                         width: '100%',
                     }}>
@@ -460,7 +513,7 @@ export default function TruckPage() {
                                 <form onSubmit={formik.handleSubmit}>
                                     <Grid container spacing={3}>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Ownership Type", "Select type", true, "text", "ownershipType", [
+                                            {renderField("Ownership", "Select type", true, "text", "ownershipType", [
                                                 { label: "Owned", value: "OWN" },
                                                 { label: "Transporter", value: "TRANSPORTER" },
                                                 { label: "Customer", value: "CUSTOMER" }
@@ -468,15 +521,15 @@ export default function TruckPage() {
                                         </Grid>
 
                                         {formik.values.ownershipType === "TRANSPORTER" && (
-                                            <Grid item xs={12}>
+                                            <Grid item xs={12} md={6}>
                                                 {renderField("Select Transporter", "Choose transporter", true, "text", "transporterId", 
-                                                    transporters.map(tr => ({ label: `${tr.name} (${tr.iCode})`, value: tr.id }))
+                                                    transporters.map(tr => ({ label: `${tr.name} (${tr.icode})`, value: tr.id }))
                                                 )}
                                             </Grid>
                                         )}
 
                                         {formik.values.ownershipType === "CUSTOMER" && (
-                                            <Grid item xs={12}>
+                                            <Grid item xs={12} md={6}>
                                                 {renderField("Select Customer", "Choose customer", true, "text", "customerId", 
                                                     customers.map(cu => ({ label: cu.name, value: cu.id }))
                                                 )}
@@ -484,31 +537,68 @@ export default function TruckPage() {
                                         )}
 
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Owner Name (optional)", "Enter owner name", false, "text", "ownerName")}
+                                            {renderField("Register Name", "Enter name", false, "text", "registerName")}
                                         </Grid>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Tare Weight (kg)", "Enter weight", false, "number", "tareWeight")}
+                                            {renderField("Truck No", "Enter truck no", false, "text", "truckNo")}
                                         </Grid>
 
-                                        <Grid item xs={12} sx={{ mt: 1 }}>
-                                            <Divider />
-                                            <Typography sx={{ fontWeight: 700, mt: 2, mb: 1, fontSize: '15px' }}>Technical Details</Typography>
-                                        </Grid>
-
-                                        <Grid item xs={12} md={4}>
+                                        <Grid item xs={12} md={6}>
                                             {renderField("Make", "Enter make", false, "text", "make")}
                                         </Grid>
-                                        <Grid item xs={12} md={4}>
+                                        <Grid item xs={12} md={6}>
                                             {renderField("Model", "Enter model", false, "text", "model")}
                                         </Grid>
-                                        <Grid item xs={12} md={4}>
-                                            {renderField("Fuel Type", "Enter fuel", false, "text", "fuelType")}
-                                        </Grid>
+
                                         <Grid item xs={12} md={6}>
                                             {renderField("Engine No", "Enter engine no", false, "text", "engineNo")}
                                         </Grid>
                                         <Grid item xs={12} md={6}>
                                             {renderField("Chassis No", "Enter chassis no", false, "text", "chassisNo")}
+                                        </Grid>
+
+                                        {/* RC Upload Section */}
+                                        <Grid item xs={12} md={6}>
+                                            <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>RC (Registration Certificate)</Typography>
+                                            <Grid container spacing={1}>
+                                                <Grid item xs={6}>{renderFileUpload("RC Front", "rcFront")}</Grid>
+                                                <Grid item xs={6}>{renderFileUpload("RC Back", "rcBack")}</Grid>
+                                            </Grid>
+                                        </Grid>
+
+                                        {/* Insurance Section */}
+                                        <Grid item xs={12} md={6}>
+                                            {renderField("Insurance Validity", "Enter date", false, "date", "insuranceValidity")}
+                                            <Box sx={{ mt: 1 }}>{renderFileUpload("Upload Insurance", "insurance")}</Box>
+                                        </Grid>
+
+                                        {/* Permit Section */}
+                                        <Grid item xs={12} md={6}>
+                                            {renderField("Permit Validity", "Enter date", false, "date", "permitValidity")}
+                                            <Box sx={{ mt: 1 }}>{renderFileUpload("Upload Permit", "permit")}</Box>
+                                        </Grid>
+
+                                        {/* FC Section */}
+                                        <Grid item xs={12} md={6}>
+                                            {renderField("FC Validity", "Enter date", false, "date", "fcValidity")}
+                                            <Box sx={{ mt: 1 }}>{renderFileUpload("Upload FC", "fc")}</Box>
+                                        </Grid>
+
+                                        <Grid item xs={12} md={4}>
+                                            {renderField("Usage Type", "", true, "text", "usageType", [
+                                                { label: "Commercial", value: "Commercial" },
+                                                { label: "Personal", value: "Personal" }
+                                            ])}
+                                        </Grid>
+                                        <Grid item xs={12} md={4}>
+                                            {renderField("Fuel Type", "", true, "text", "fuelType", [
+                                                { label: "Diesel", value: "Diesel" },
+                                                { label: "Petrol", value: "Petrol" },
+                                                { label: "EV", value: "EV" }
+                                            ])}
+                                        </Grid>
+                                        <Grid item xs={12} md={4}>
+                                            {renderField("Tare Weight (kg)", "Enter weight", false, "number", "tareWeight")}
                                         </Grid>
 
                                         <Grid item xs={12} sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>

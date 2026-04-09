@@ -346,7 +346,7 @@ export default function CompanyPage() {
 
     const handleAddBranch = () => {
         if (!currentBranch.name || !currentBranch.plantType || !currentBranch.contactNo || !currentBranch.addressLine1 || !currentBranch.district || !currentBranch.state || !currentBranch.pincode) {
-            setSnackbar({ open: true, message: "Please fill in the required fields: Branch Name, Plant Type, Contact No, Address Line 1, District, State, and Pincode.", severity: "error" });
+            setSnackbar({ open: true, message: "Please fill in the required fields: Branch Name, Branch Category, Contact No, Address Line 1, District, State, and Pincode.", severity: "error" });
             return;
         }
         if (!phoneRegex.test(currentBranch.contactNo)) {
@@ -508,14 +508,14 @@ export default function CompanyPage() {
                         sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
                     >
                         <MenuItem value="">{placeholder}</MenuItem>
-                        {label.includes("Branch Category") || label.includes("Site Type") ? [
-                            <MenuItem key="OFFICE" value="OFFICE">OFFICE</MenuItem>,
-                            <MenuItem key="PRODUCTION" value="PRODUCTION">PRODUCTION</MenuItem>
-                        ] : label.includes("Plant Type") || label.includes("Branch Type") ? [
+                        {label.includes("Branch Category") ? [
                             <MenuItem key="CRUSHER" value="CRUSHER">CRUSHER</MenuItem>,
                             <MenuItem key="YARD" value="YARD">YARD</MenuItem>,
                             <MenuItem key="QUARRY" value="QUARRY">QUARRY</MenuItem>,
-                            <MenuItem key="INTEGRATED" value="INTEGRATED">INTEGRATED</MenuItem>
+                            <MenuItem key="INTERGAT" value="INTERGAT">INTERGAT</MenuItem>
+                        ] : label.includes("Site Type") ? [
+                            <MenuItem key="OFFICE" value="OFFICE">OFFICE</MenuItem>,
+                            <MenuItem key="PRODUCTION" value="PRODUCTION">PRODUCTION</MenuItem>
                         ] : [
                             <MenuItem key="Option 1" value="Option 1">Option 1</MenuItem>,
                             <MenuItem key="Option 2" value="Option 2">Option 2</MenuItem>
@@ -588,14 +588,14 @@ export default function CompanyPage() {
                         sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
                     >
                         <MenuItem value="">{placeholder}</MenuItem>
-                        {label.includes("Site Type") || label.includes("Branch Type") ? [
-                            <MenuItem key="OFFICE" value="OFFICE">OFFICE</MenuItem>,
-                            <MenuItem key="PRODUCTION" value="PRODUCTION">PRODUCTION</MenuItem>
-                        ] : label.includes("Plant Type") ? [
+                        {label.includes("Branch Category") ? [
                             <MenuItem key="CRUSHER" value="CRUSHER">CRUSHER</MenuItem>,
                             <MenuItem key="YARD" value="YARD">YARD</MenuItem>,
                             <MenuItem key="QUARRY" value="QUARRY">QUARRY</MenuItem>,
-                            <MenuItem key="INTEGRATED" value="INTEGRATED">INTEGRATED</MenuItem>
+                            <MenuItem key="INTERGAT" value="INTERGAT">INTERGAT</MenuItem>
+                        ] : label.includes("Site Type") ? [
+                            <MenuItem key="OFFICE" value="OFFICE">OFFICE</MenuItem>,
+                            <MenuItem key="PRODUCTION" value="PRODUCTION">PRODUCTION</MenuItem>
                         ] : null}
                     </Select>
                 ) : (
@@ -697,8 +697,8 @@ export default function CompanyPage() {
                                     <Box sx={{ width: itemWidth }}>{renderEntryField("Pincode", "Enter pincode", false, "text", currentBranch.pincode, (v) => setCurrentBranch({ ...currentBranch, pincode: v }))}</Box>
                                     <Box sx={{ width: itemWidth }}>{renderEntryField("Contact No", "Enter contact no", false, "text", currentBranch.contactNo, (v) => setCurrentBranch({ ...currentBranch, contactNo: v }))}</Box>
                                     <Box sx={{ width: itemWidth }}>{renderEntryField("Alternate No", "Enter alternate no", false, "text", currentBranch.alternateNo, (v) => setCurrentBranch({ ...currentBranch, alternateNo: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Branch Category", "Select category", true, "text", currentBranch.siteType, (v) => setCurrentBranch({ ...currentBranch, siteType: v }))}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Branch Type *", "Select branch type", true, "text", currentBranch.plantType, (v) => setCurrentBranch({ ...currentBranch, plantType: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Branch Category *", "Select category", true, "text", currentBranch.plantType, (v) => setCurrentBranch({ ...currentBranch, plantType: v }))}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderEntryField("Site Type", "Select site type", true, "text", currentBranch.siteType, (v) => setCurrentBranch({ ...currentBranch, siteType: v }))}</Box>
                                     <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', pb: 1 }}>
                                         {renderEntryField("Active", "", false, "switch", currentBranch.active, (v) => setCurrentBranch({ ...currentBranch, active: v }))}
                                     </Box>

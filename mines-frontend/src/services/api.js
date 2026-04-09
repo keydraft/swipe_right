@@ -163,9 +163,21 @@ export const truckApi = {
     });
     return response.data;
   },
-  upsert: async (truckData, id = null) => {
-    const response = await api.post("/trucks/upsert", truckData, {
-      params: id ? { id } : {}
+  upsert: async (truckData, files = {}, id = null) => {
+    const formData = new FormData();
+    formData.append("truck", JSON.stringify(truckData));
+    
+    if (files.rcFront) formData.append("rcFront", files.rcFront);
+    if (files.rcBack) formData.append("rcBack", files.rcBack);
+    if (files.insurance) formData.append("insurance", files.insurance);
+    if (files.permit) formData.append("permit", files.permit);
+    if (files.fc) formData.append("fc", files.fc);
+
+    const response = await api.post("/trucks/upsert", formData, {
+      params: id ? { id } : {},
+      headers: {
+        "Content-Type": "multipart/form-data",
+      },
     });
     return response.data;
   },

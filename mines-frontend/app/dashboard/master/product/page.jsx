@@ -16,8 +16,15 @@ import { palette } from "@/theme";
 import { productApi, adminApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
+import Cookies from "js-cookie";
 
 export default function ProductPage() {
+    const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
+    const associations = user.companies || [];
+    const defaultCompanyId = associations.length > 0 ? associations[0].companyId : "";
+    const defaultBranchId = associations.length > 0 ? associations[0].branchId : "";
+
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
     const [products, setProducts] = useState([]);
@@ -38,6 +45,7 @@ export default function ProductPage() {
         gst: "0",
         rmType: "",
         status: "Active",
+        companyId: "",
         branchPrices: []
     };
 
@@ -47,6 +55,7 @@ export default function ProductPage() {
         hsnc: Yup.string().required("HSN Code is required"),
         gst: Yup.number().typeError("GST must be a number").required("GST is required"),
         rmType: Yup.string().required("RM Type is required"),
+        companyId: Yup.string().required("Company is required")
     });
 
     const fetchInitialData = async () => {
@@ -54,9 +63,11 @@ export default function ProductPage() {
         try {
             await fetchProducts();
             
-            const companyResp = await adminApi.getCompanies(0, 500); // Get companies for branch info
-            if (companyResp.success) {
-                  localStorage.setItem("companies", JSON.stringify(companyResp.data.content));
+            if (userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') {
+                const companyResp = await adminApi.getCompanies(0, 500); // Get companies for branch info
+                if (companyResp.success) {
+                      localStorage.setItem("companies", JSON.stringify(companyResp.data.content));
+                }
             }
         } catch (error) {
             console.error("Error fetching initial product data:", error);
@@ -101,9 +112,6 @@ export default function ProductPage() {
         initialValues,
         validationSchema,
         onSubmit: async (values) => {
-            const branchPrices = values.branchPrices || [];
-            const companyId = branchPrices[0]?.companyId;
-            
             const payload = {
                 name: values.name,
                 shortName: values.shortName,
@@ -111,8 +119,8 @@ export default function ProductPage() {
                 gstPercentage: parseFloat(values.gst),
                 rmType: values.rmType || "CRUSHER",
                 active: values.status === "Active",
-                companyId: companyId,
-                prices: branchPrices.map(p => ({
+                companyId: values.companyId,
+                prices: values.branchPrices.map(p => ({
                     branchId: p.branchId,
                     rate: parseFloat(p.rate)
                 }))
@@ -133,53 +141,84 @@ export default function ProductPage() {
         },
     });
 
-    const handleOpenModal = async () => {
-        let availableBranches = [];
-        const savedCompanies = localStorage.getItem("companies");
-        if (savedCompanies) {
-            const companies = JSON.parse(savedCompanies);
-            availableBranches = companies.flatMap(c => (c.branches || []).map(b => ({
-                id: b.id,
-                name: b.name,
-                companyId: c.id
-            })));
+    const handleOpenModal = () => {
+        let initialBranchPrices = [];
+        let initialCompanyId = "";
+
+        if (userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') {
+            const savedCompanies = localStorage.getItem("companies");
+            if (savedCompanies) {
+                const companies = JSON.parse(savedCompanies);
+                initialCompanyId = companies.length > 0 ? companies[0].id : "";
+                if (initialCompanyId) {
+                    const comp = companies.find(c => c.id === initialCompanyId);
+                    if (comp) {
+                        initialBranchPrices = (comp.branches || []).map(b => ({
+                            branchId: b.id,
+                            branchName: b.name,
+                            rate: "0",
+                            companyId: comp.id
+                        }));
+                    }
+                }
+            }
+        } else {
+            // Non-admin roles (MANAGER, SITEOPERATOR, etc.)
+            if (associations.length > 0) {
+                initialCompanyId = defaultCompanyId;
+                initialBranchPrices = associations
+                    .filter(assoc => assoc.branchId) // Only show specific assigned branches
+                    .map(assoc => ({
+                        branchId: assoc.branchId,
+                        branchName: assoc.branchName,
+                        rate: "0",
+                        companyId: assoc.companyId
+                    }));
+            }
         }
 
-        const initialBranchPrices = availableBranches.map(branch => ({
-            branchId: branch.id,
-            branchName: branch.name,
-            rate: "0",
-            companyId: branch.companyId
-        }));
-
-        formik.setValues({ ...initialValues, branchPrices: initialBranchPrices });
+        formik.setValues({ ...initialValues, companyId: initialCompanyId, branchPrices: initialBranchPrices });
         setIsEditing(false);
         setEditingId(null);
         setOpenModal(true);
         setShowSuccess(false);
     };
 
-    const handleEditProduct = async (product) => {
-        let currentBranches = [];
-        const savedCompanies = localStorage.getItem("companies");
-        if (savedCompanies) {
-            const companies = JSON.parse(savedCompanies);
-            currentBranches = companies.flatMap(c => (c.branches || []).map(b => ({
-                id: b.id,
-                name: b.name,
-                companyId: c.id
-            })));
-        }
+    const handleEditProduct = (product) => {
+        let initialBranchPrices = [];
+        const prodCompanyId = product.companyId || "";
 
-        const mergedPlantPrices = currentBranches.map(branch => {
-            const existing = (product.prices || []).find(p => p.branchId === branch.id);
-            return {
-                branchId: branch.id,
-                branchName: branch.name,
-                rate: existing ? existing.rate.toString() : "0",
-                companyId: branch.companyId
-            };
-        });
+        if (userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') {
+            const savedCompanies = localStorage.getItem("companies");
+            if (savedCompanies && prodCompanyId) {
+                const companies = JSON.parse(savedCompanies);
+                const comp = companies.find(c => c.id === prodCompanyId);
+                if (comp) {
+                    initialBranchPrices = (comp.branches || []).map(b => {
+                        const existing = (product.prices || []).find(p => p.branchId === b.id);
+                        return {
+                            branchId: b.id,
+                            branchName: b.name,
+                            rate: existing ? existing.rate.toString() : "0",
+                            companyId: comp.id
+                        };
+                    });
+                }
+            }
+        } else {
+            // For non-admins, only show branches assigned to them
+            initialBranchPrices = associations
+                .filter(assoc => assoc.branchId && assoc.companyId === prodCompanyId)
+                .map(assoc => {
+                    const existing = (product.prices || []).find(p => p.branchId === assoc.branchId);
+                    return {
+                        branchId: assoc.branchId,
+                        branchName: assoc.branchName,
+                        rate: existing ? existing.rate.toString() : "0",
+                        companyId: assoc.companyId
+                    };
+                });
+        }
 
         formik.setValues({
             name: product.name || "",
@@ -188,7 +227,8 @@ export default function ProductPage() {
             gst: product.gstPercentage?.toString() || "0",
             rmType: product.rmType || "",
             status: product.active ? "Active" : "Inactive",
-            branchPrices: mergedPlantPrices
+            companyId: prodCompanyId,
+            branchPrices: initialBranchPrices
         });
         setIsEditing(true);
         setEditingId(product.id);
@@ -454,6 +494,47 @@ export default function ProductPage() {
                                                 { label: "BY PRODUCT", value: "BY_PRODUCT" }
                                             ])}
                                         </Grid>
+
+                                        {(userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') && (
+                                            <Grid item xs={12}>
+                                                <Box sx={{ width: '100%' }}>
+                                                    <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Company</Typography>
+                                                    <Select
+                                                        fullWidth size="small"
+                                                        name="companyId"
+                                                        value={formik.values.companyId}
+                                                        onChange={(e) => {
+                                                            formik.handleChange(e);
+                                                            const savedCompanies = localStorage.getItem("companies");
+                                                            if (savedCompanies) {
+                                                                const companies = JSON.parse(savedCompanies);
+                                                                const comp = companies.find(c => c.id === e.target.value);
+                                                                if (comp) {
+                                                                    const newPrices = (comp.branches || []).map(b => ({
+                                                                        branchId: b.id,
+                                                                        branchName: b.name,
+                                                                        rate: "0",
+                                                                        companyId: comp.id
+                                                                    }));
+                                                                    formik.setFieldValue("branchPrices", newPrices);
+                                                                }
+                                                            }
+                                                        }}
+                                                        disabled={isEditing}
+                                                        displayEmpty
+                                                        sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6' }}
+                                                    >
+                                                        <MenuItem value="" disabled>Select Company to load branches</MenuItem>
+                                                        {(typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("companies") || "[]") : []).map(c => (
+                                                            <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                                                        ))}
+                                                    </Select>
+                                                    {formik.touched.companyId && formik.errors.companyId && (
+                                                        <Typography color="error" sx={{ fontSize: '0.75rem', ml: 1.5, mt: 0.5 }}>{formik.errors.companyId}</Typography>
+                                                    )}
+                                                </Box>
+                                            </Grid>
+                                        )}
 
                                         <Grid item xs={12} sx={{ mt: 1 }}>
                                             <Divider />

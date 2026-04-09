@@ -27,7 +27,7 @@ public class Truck extends BaseEntity {
     @Column(nullable = false, unique = true)
     private String truckNo;
 
-    private String ownerName;
+    private String registerName;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "transporter_id")

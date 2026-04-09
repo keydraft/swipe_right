@@ -35,7 +35,8 @@ public class AdminService {
     // ==================== MAPPING HELPERS ====================
 
     private Address mapAddress(AddressRequest request) {
-        if (request == null) return null;
+        if (request == null)
+            return null;
         return Address.builder()
                 .addressLine1(request.getAddressLine1())
                 .addressLine2(request.getAddressLine2())
@@ -46,7 +47,8 @@ public class AdminService {
     }
 
     private AddressResponse mapAddressResponse(Address address) {
-        if (address == null) return null;
+        if (address == null)
+            return null;
         return AddressResponse.builder()
                 .addressLine1(address.getAddressLine1())
                 .addressLine2(address.getAddressLine2())
@@ -115,7 +117,8 @@ public class AdminService {
                 .collect(Collectors.toList());
 
         return UserResponse.builder()
-                .id(user.getId()).username(user.getUsername()).roleName(user.getRole().getName()).enabled(user.isEnabled()).companies(companyInfos).build();
+                .id(user.getId()).username(user.getUsername()).roleName(user.getRole().getName())
+                .enabled(user.isEnabled()).companies(companyInfos).build();
     }
 
     private RoleResponse mapRoleResponse(Role role) {
@@ -136,7 +139,8 @@ public class AdminService {
         if (isUpdate) {
             company = companyRepository.findById(request.getId()).orElseThrow(() -> new RuntimeException("No Company"));
         } else {
-            if (companyRepository.findByName(request.getName()).isPresent()) throw new RuntimeException("Company name exists");
+            if (companyRepository.findByName(request.getName()).isPresent())
+                throw new RuntimeException("Company name exists");
             company = new Company();
         }
 
@@ -180,7 +184,8 @@ public class AdminService {
                         .phone(branchReq.getPhone())
                         .alternatePhoneNo(branchReq.getAlternatePhoneNo())
                         .emailId(branchReq.getEmailId())
-                        .address(branchReq.getAddress() != null ? mapAddress(branchReq.getAddress()) : mapAddress(request.getAddress()))
+                        .address(branchReq.getAddress() != null ? mapAddress(branchReq.getAddress())
+                                : mapAddress(request.getAddress()))
                         .company(company)
                         .build();
                 company.getBranches().add(branch);
@@ -189,8 +194,9 @@ public class AdminService {
             throw new RuntimeException("At least one branch is required");
         }
 
-        eventPublisher.publishEvent(new AuditEvent("SYSTEM", isUpdate ? "UPDATE_COMPANY" : "CREATE_COMPANY", "Company " + company.getName() + " processed.", null));
-        
+        eventPublisher.publishEvent(new AuditEvent("SYSTEM", isUpdate ? "UPDATE_COMPANY" : "CREATE_COMPANY",
+                "Company " + company.getName() + " processed.", null));
+
         return mapCompanyResponse(companyRepository.save(company));
     }
 
@@ -198,7 +204,8 @@ public class AdminService {
     public void deleteCompany(java.util.UUID id) {
         Company company = companyRepository.findById(id).orElseThrow(() -> new RuntimeException("No Company"));
         companyRepository.delete(company);
-        eventPublisher.publishEvent(new AuditEvent("SYSTEM", "DELETE_COMPANY", "Company " + company.getName() + " deleted.", null));
+        eventPublisher.publishEvent(
+                new AuditEvent("SYSTEM", "DELETE_COMPANY", "Company " + company.getName() + " deleted.", null));
     }
 
     // ==================== PARTNER LINKING ====================
@@ -207,7 +214,8 @@ public class AdminService {
     public UserResponse linkPartnerToCompany(PartnerLinkRequest request) {
         User user = userRepository.findByUsername(request.getUsername()).orElseThrow();
         Company company = companyRepository.findById(request.getCompanyId()).orElseThrow();
-        if (userCompanyRepository.findByUserAndCompany(user, company).isPresent()) throw new RuntimeException("Already linked");
+        if (userCompanyRepository.findByUserAndCompany(user, company).isPresent())
+            throw new RuntimeException("Already linked");
         userCompanyRepository.save(UserCompany.builder().user(user).company(company).branch(null).build());
         return mapUserResponse(user);
     }
@@ -225,10 +233,12 @@ public class AdminService {
     @Transactional
     public UserResponse createUser(UserCreateRequest request, User currentUser) {
         String roleName = request.getRoleName().toUpperCase();
-        Role role = roleRepository.findByName(roleName).orElseGet(() -> roleRepository.save(Role.builder().name(roleName).build()));
-        User newUser = User.builder().username(request.getUsername()).password(passwordEncoder.encode(request.getPassword())).role(role).enabled(true).build();
+        Role role = roleRepository.findByName(roleName)
+                .orElseGet(() -> roleRepository.save(Role.builder().name(roleName).build()));
+        User newUser = User.builder().username(request.getUsername())
+                .password(passwordEncoder.encode(request.getPassword())).role(role).enabled(true).build();
         newUser = userRepository.save(newUser);
-        
+
         if (roleName.equals("PARTNER")) {
             for (java.util.UUID coId : request.getCompanyIds()) {
                 Company co = companyRepository.findById(coId).orElseThrow();
@@ -237,7 +247,7 @@ public class AdminService {
         } else if (!roleName.equals("ADMIN")) {
             Company co = companyRepository.findById(request.getCompanyId()).orElseThrow();
             Branch br = branchRepository.findById(request.getBranchId()).orElseThrow();
-            
+
             if ("MANAGER".equals(roleName)) {
                 if (userCompanyRepository.existsByBranchIdAndUser_Role_Name(br.getId(), "MANAGER")) {
                     throw new RuntimeException("A Manager already exists for this branch.");
@@ -247,13 +257,16 @@ public class AdminService {
             userCompanyRepository.save(UserCompany.builder().user(newUser).company(co).branch(br).build());
         }
 
-        eventPublisher.publishEvent(new AuditEvent(currentUser.getUsername(), "CREATE_USER", "User " + newUser.getUsername() + " created.", null));
+        eventPublisher.publishEvent(new AuditEvent(currentUser.getUsername(), "CREATE_USER",
+                "User " + newUser.getUsername() + " created.", null));
         return mapUserResponse(newUser);
     }
 
     public List<CompanyResponse> getCompaniesForUser(User user) {
-        if (user.getRole().getName().equals("ADMIN")) return companyRepository.findAll().stream().map(this::mapCompanyResponse).collect(Collectors.toList());
-        return userCompanyRepository.findByUser(user).stream().map(UserCompany::getCompany).distinct().map(this::mapCompanyResponse).collect(Collectors.toList());
+        if (user.getRole().getName().equals("ADMIN"))
+            return companyRepository.findAll().stream().map(this::mapCompanyResponse).collect(Collectors.toList());
+        return userCompanyRepository.findByUser(user).stream().map(UserCompany::getCompany).distinct()
+                .map(this::mapCompanyResponse).collect(Collectors.toList());
     }
 
     public PaginatedResponse<CompanyResponse> getAllCompanies(String search, Pageable pageable) {
@@ -266,8 +279,7 @@ public class AdminService {
                     cb.like(cb.lower(root.get("name")), pattern),
                     cb.like(cb.lower(root.get("gstin")), pattern),
                     cb.like(cb.lower(root.get("emailId")), pattern),
-                    cb.like(cb.lower(root.get("phone")), pattern)
-            );
+                    cb.like(cb.lower(root.get("phone")), pattern));
         };
 
         Page<Company> page = companyRepository.findAll(spec, pageable);
@@ -285,46 +297,53 @@ public class AdminService {
                 .build();
     }
 
-    public List<UserResponse> getAllUsers() { return userRepository.findAll().stream().map(this::mapUserResponse).collect(Collectors.toList()); }
-    public List<RoleResponse> getAllRoles() { return roleRepository.findAll().stream().map(this::mapRoleResponse).collect(Collectors.toList()); }
+    public List<UserResponse> getAllUsers() {
+        return userRepository.findAll().stream().map(this::mapUserResponse).collect(Collectors.toList());
+    }
+
+    public List<RoleResponse> getAllRoles() {
+        return roleRepository.findAll().stream().map(this::mapRoleResponse).collect(Collectors.toList());
+    }
 
     @Transactional
     public List<RoleResponse> seedDefaultRoles() {
         // 1. Define standard permissions
         String[][] permissionData = {
-            {"READ_COMPANY", "Can view company details"},
-            {"WRITE_COMPANY", "Can create/update companies"},
-            {"DELETE_COMPANY", "Can delete companies"},
-            {"READ_USER", "Can view user accounts"},
-            {"WRITE_USER", "Can create/update user accounts"},
-            {"READ_EMPLOYEE", "Can view employee data"},
-            {"WRITE_EMPLOYEE", "Can manage employees"},
-            {"READ_PRODUCT", "Can view master product list"},
-            {"WRITE_PRODUCT", "Can manage products"},
-            {"READ_CUSTOMER", "Can view customer profiles"},
-            {"READ_POS", "Can access point of sale"},
-            {"WRITE_POS", "Can perform billing and coupon issuance"},
-            {"READ_BILLING", "Can view billing and coupon records"},
-            {"READ_DASHBOARD", "Can view the main dashboard"}
+                { "READ_COMPANY", "Can view company details" },
+                { "WRITE_COMPANY", "Can create/update companies" },
+                { "DELETE_COMPANY", "Can delete companies" },
+                { "READ_USER", "Can view user accounts" },
+                { "WRITE_USER", "Can create/update user accounts" },
+                { "READ_EMPLOYEE", "Can view employee data" },
+                { "WRITE_EMPLOYEE", "Can manage employees" },
+                { "READ_PRODUCT", "Can view master product list" },
+                { "WRITE_PRODUCT", "Can manage products" },
+                { "READ_CUSTOMER", "Can view customer profiles" },
+                { "READ_POS", "Can access point of sale" },
+                { "WRITE_POS", "Can perform billing and coupon issuance" },
+                { "READ_BILLING", "Can view billing and coupon records" },
+                { "READ_DASHBOARD", "Can view the main dashboard" }
         };
 
         java.util.Map<String, Permission> permMap = new java.util.HashMap<>();
         for (String[] p : permissionData) {
             Permission perm = permissionRepository.findByName(p[0])
-                .orElseGet(() -> permissionRepository.save(Permission.builder().name(p[0]).description(p[1]).build()));
+                    .orElseGet(
+                            () -> permissionRepository.save(Permission.builder().name(p[0]).description(p[1]).build()));
             permMap.put(p[0], perm);
         }
 
         // 2. Define roles and their associated permissions
         String[] ns = { "ADMIN", "PARTNER", "MANAGER", "ACCOUNTANT", "SITEOPERATOR", "WEIGHMENT_OPERATOR" };
         int[] ranks = { 0, 1, 2, 3, 4, 5 };
-        
+
         java.util.List<RoleResponse> res = new java.util.ArrayList<>();
         for (int i = 0; i < ns.length; i++) {
             final String name = ns[i];
             final int rank = ranks[i];
-            
-            Role r = roleRepository.findByName(name).orElseGet(() -> roleRepository.save(Role.builder().name(name).rank(rank).build()));
+
+            Role r = roleRepository.findByName(name)
+                    .orElseGet(() -> roleRepository.save(Role.builder().name(name).rank(rank).build()));
             if (r.getRank() != rank) {
                 r.setRank(rank);
             }
@@ -332,7 +351,7 @@ public class AdminService {
             // Assign permissions to roles
             java.util.Set<Permission> perms = r.getPermissions();
             perms.clear(); // Refresh permissions alignment
-            
+
             // Everyone can see the Dashboard
             perms.add(permMap.get("READ_DASHBOARD"));
 
@@ -359,7 +378,7 @@ public class AdminService {
                 perms.add(permMap.get("READ_POS"));
                 perms.add(permMap.get("WRITE_POS"));
             }
-            
+
             r = roleRepository.save(r);
             res.add(mapRoleResponse(r));
         }
