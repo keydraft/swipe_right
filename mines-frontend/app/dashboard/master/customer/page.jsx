@@ -6,7 +6,8 @@ import {
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
     Select, MenuItem, Switch, FormControlLabel, TablePagination, Stack, Paper, Divider,
-    Stepper, Step, StepLabel, Checkbox, CircularProgress, Grid
+    Stepper, Step, StepLabel, Checkbox, CircularProgress, Grid,
+    Snackbar, Alert
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, FileDownloadOutlined as DownloadIcon,
@@ -19,6 +20,7 @@ import { palette } from "@/theme";
 import { customerApi, productApi } from "@/services/api";
 import { useFormik, FormikProvider } from "formik";
 import * as Yup from "yup";
+import { phoneRegex, pincodeRegex, gstinRegex } from "@/utils/validationSchemas";
 
 const steps = ['Registry Information', 'Pricing & Sites'];
 
@@ -33,10 +35,22 @@ export default function CustomerPage() {
     const [editingId, setEditingId] = useState(null);
     const [showSuccess, setShowSuccess] = useState(false);
 
+    // View Details State
+    const [viewModalOpen, setViewModalOpen] = useState(false);
+    const [selectedCustomer, setSelectedCustomer] = useState(null);
+
     // Pagination State
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [totalElements, setTotalElements] = useState(0);
+
+    // Notification State
+    const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
+    const handleCloseSnackbar = () => setSnackbar({ ...snackbar, open: false });
+
+    // Delete Confirmation State
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState(null);
 
     const initialValues = {
         name: "",
@@ -53,7 +67,20 @@ export default function CustomerPage() {
     const validationSchema = Yup.object({
         name: Yup.string().required("Customer name is required"),
         type: Yup.string().required("Type is required"),
-        phone: Yup.string().required("Phone is required")
+        phone: Yup.string()
+            .matches(phoneRegex, "Phone must be 10-12 digits")
+            .required("Phone number is required"),
+        email: Yup.string().email("Invalid email format"),
+        gstin: Yup.string()
+            .matches(gstinRegex, "Invalid GSTIN format"),
+        address: Yup.object({
+            addressLine1: Yup.string().required("Address line 1 is required"),
+            district: Yup.string().required("District is required"),
+            state: Yup.string().required("State is required"),
+            pincode: Yup.string()
+                .matches(pincodeRegex, "Pincode must be 6 digits")
+                .required("Pincode is required")
+        })
     });
 
     const fetchInitialData = async () => {
@@ -152,6 +179,33 @@ export default function CustomerPage() {
         setShowSuccess(false);
     };
 
+    const handleViewCustomer = (customer) => {
+        setSelectedCustomer(customer);
+        setViewModalOpen(true);
+    };
+
+    const handleDeleteClick = (id) => {
+        setDeleteTargetId(id);
+        setDeleteConfirmOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        try {
+            const response = await customerApi.delete(deleteTargetId);
+            if (response.success) {
+                setSnackbar({ open: true, message: "Customer deleted successfully", severity: "success" });
+                fetchCustomers();
+            } else {
+                setSnackbar({ open: true, message: response.message || "Failed to delete customer", severity: "error" });
+            }
+        } catch (error) {
+            setSnackbar({ open: true, message: "An error occurred while deleting", severity: "error" });
+        } finally {
+            setDeleteConfirmOpen(false);
+            setDeleteTargetId(null);
+        }
+    };
+
     const handleCloseModal = () => {
         setOpenModal(false);
         formik.resetForm();
@@ -162,25 +216,41 @@ export default function CustomerPage() {
         let value = formik.values;
         for (const key of fieldKeys) value = value?.[key];
         
-        const error = fieldKeys.length > 1 
-            ? formik.touched[fieldKeys[0]]?.[fieldKeys[1]] && formik.errors[fieldKeys[0]]?.[fieldKeys[1]]
-            : formik.touched[field] && formik.errors[field];
+        const getFieldMeta = (name) => {
+            const keys = name.split('.');
+            let meta = { touched: formik.touched, error: formik.errors };
+            for (const key of keys) {
+                meta = {
+                    touched: meta.touched?.[key],
+                    error: meta.error?.[key]
+                };
+            }
+            return meta;
+        };
+
+        const meta = getFieldMeta(field);
+        const hasError = !!(meta.touched && meta.error);
 
         return (
             <Box sx={{ width: '100%', mb: 2 }}>
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
                 {isSelect ? (
-                    <Select
-                        fullWidth size="small"
-                        name={field}
-                        value={value || ""}
-                        onChange={formik.handleChange}
-                        displayEmpty
-                        sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
-                    >
-                        <MenuItem value="">{placeholder}</MenuItem>
-                        {options.map((opt, i) => <MenuItem key={i} value={opt.value}>{opt.label}</MenuItem>)}
-                    </Select>
+                    <Box>
+                        <Select
+                            fullWidth size="small"
+                            name={field}
+                            value={value || ""}
+                            onChange={formik.handleChange}
+                            onBlur={formik.handleBlur}
+                            displayEmpty
+                            error={hasError}
+                            sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: hasError ? '1px solid #d32f2f' : '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                        >
+                            <MenuItem value="">{placeholder}</MenuItem>
+                            {options.map((opt, i) => <MenuItem key={i} value={opt.value}>{opt.label}</MenuItem>)}
+                        </Select>
+                        {hasError && <Typography sx={{ color: '#d32f2f', fontSize: '11px', mt: 0.5, ml: 1 }}>{meta.error}</Typography>}
+                    </Box>
                 ) : (
                     <TextField
                         fullWidth size="small"
@@ -189,7 +259,17 @@ export default function CustomerPage() {
                         placeholder={placeholder}
                         value={value || ""}
                         onChange={formik.handleChange}
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
+                        onBlur={formik.handleBlur}
+                        error={hasError}
+                        helperText={hasError ? meta.error : ""}
+                        sx={{ 
+                            '& .MuiOutlinedInput-root': { 
+                                borderRadius: '12px', 
+                                backgroundColor: '#F9FAFB', 
+                                '& .MuiOutlinedInput-notchedOutline': { border: hasError ? '1px solid #d32f2f' : '1px solid #F3F4F6' } 
+                            },
+                            '& .MuiFormHelperText-root': { ml: 1 }
+                        }}
                     />
                 )}
             </Box>
@@ -218,8 +298,28 @@ export default function CustomerPage() {
         }
     };
 
-    const nextStep = () => {
-        if (activeStep === 0) setActiveStep(1);
+    const nextStep = async () => {
+        if (activeStep === 0) {
+            const errors = await formik.validateForm();
+            if (errors.name || errors.phone || errors.email || errors.gstin || errors.address) {
+                // Touch all fields to show errors
+                formik.setTouched({
+                    name: true,
+                    type: true,
+                    phone: true,
+                    email: true,
+                    gstin: true,
+                    address: {
+                        addressLine1: true,
+                        district: true,
+                        state: true,
+                        pincode: true
+                    }
+                });
+                return;
+            }
+            setActiveStep(1);
+        }
         else formik.handleSubmit();
     };
 
@@ -357,8 +457,11 @@ export default function CustomerPage() {
                                         <TableCell>{c.gstin || '-'}</TableCell>
                                         <TableCell align="center">
                                             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                                                <Tooltip title="View">
+                                                    <IconButton onClick={() => handleViewCustomer(c)} sx={{ color: palette.primary.main }} size="small"><ViewIcon fontSize="small" /></IconButton>
+                                                </Tooltip>
                                                 <IconButton onClick={() => handleEditCustomer(c)} sx={{ color: '#0057FF' }} size="small"><EditIcon fontSize="small" /></IconButton>
-                                                <IconButton sx={{ color: '#EF4444' }} size="small"><DeleteIcon fontSize="small" /></IconButton>
+                                                <IconButton onClick={() => handleDeleteClick(c.id)} sx={{ color: '#EF4444' }} size="small"><DeleteIcon fontSize="small" /></IconButton>
                                             </Box>
                                         </TableCell>
                                     </TableRow>
@@ -418,7 +521,7 @@ export default function CustomerPage() {
                         scrollbarWidth: 'none',
                         p: { xs: 2, sm: 4 }
                     }}>
-                        {renderStepper()}
+                        {!showSuccess && renderStepper()}
                         <Box sx={{
                             backgroundColor: showSuccess ? 'transparent' : '#fff',
                             borderRadius: '16px',
@@ -442,7 +545,6 @@ export default function CustomerPage() {
                                         {activeStep === 0 ? (
                                             <Grid container spacing={3}>
                                                 <Grid item xs={12} md={6}>
-                                                    <Typography sx={{ fontWeight: 700, mb: 2, color: '#0057FF' }}>Basic Identification</Typography>
                                                     {renderField("Customer Full Name", "Enter name", "name")}
                                                     {renderField("Customer Type *", "Select type", "type", "text", true, [{ label: "LOCAL", value: "LOCAL" }, { label: "CORPORATE", value: "CORPORATE" }])}
                                                     {renderField("Primary Phone", "Enter phone", "phone")}
@@ -450,7 +552,6 @@ export default function CustomerPage() {
                                                     {renderField("GSTIN Number", "Enter GSTIN", "gstin")}
                                                 </Grid>
                                                 <Grid item xs={12} md={6}>
-                                                    <Typography sx={{ fontWeight: 700, mb: 2, color: '#0057FF' }}>Office / Billing Address</Typography>
                                                     {renderField("Address Line 1", "Enter address", "address.addressLine1")}
                                                     {renderField("Address Line 2", "Enter address", "address.addressLine2")}
                                                     <Stack direction="row" spacing={2}>
@@ -569,7 +670,235 @@ export default function CustomerPage() {
                         </Box>
                     </DialogContent>
                 </Dialog>
+
+                {/* View Customer Details Modal */}
+                <Dialog 
+                    open={viewModalOpen} 
+                    onClose={() => setViewModalOpen(false)}
+                    maxWidth="md"
+                    fullWidth
+                    sx={{
+                        '& .MuiDialog-container': {
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginLeft: { md: '280px' },
+                            width: { md: 'calc(100% - 280px)' }
+                        },
+                        '& .MuiBackdrop-root': {
+                            marginLeft: { md: '280px' }
+                        }
+                    }}
+                    PaperProps={{
+                        sx: {
+                            borderRadius: '24px',
+                            padding: '16px',
+                            backgroundColor: '#F8FAFC'
+                        }
+                    }}
+                >
+                    <DialogContent sx={{ p: { xs: 2, sm: 4 } }}>
+                        {selectedCustomer && (
+                            <Box>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                    <Box>
+                                        <Typography variant="h4" sx={{ fontWeight: 900, color: '#111827' }}>
+                                            {selectedCustomer.name}
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>
+                                            Type: {selectedCustomer.type} | Phone: {selectedCustomer.phone}
+                                        </Typography>
+                                    </Box>
+                                    <Box sx={{ 
+                                        px: 2, py: 1, borderRadius: '12px', 
+                                        backgroundColor: selectedCustomer.active ? '#EBFDF5' : '#FEF2F2',
+                                        color: selectedCustomer.active ? '#10B981' : '#EF4444',
+                                        fontWeight: 700, fontSize: '13px'
+                                    }}>
+                                        {selectedCustomer.active ? 'ACTIVE' : 'INACTIVE'}
+                                    </Box>
+                                </Box>
+
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                    <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                                        <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Box sx={{ width: 4, height: 16, backgroundColor: '#2D3FE2', borderRadius: 2 }} />
+                                            Basic Information
+                                        </Typography>
+                                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
+                                            <DetailItem label="Full Name" value={selectedCustomer.name} />
+                                            <DetailItem label="Customer Type" value={selectedCustomer.type} />
+                                            <DetailItem label="Phone Number" value={selectedCustomer.phone} />
+                                            <DetailItem label="Email ID" value={selectedCustomer.email} />
+                                            <DetailItem label="GSTIN" value={selectedCustomer.gstin} />
+                                            <Box sx={{ gridColumn: '1 / -1' }}>
+                                                <DetailItem label="Address" value={`${selectedCustomer.address?.addressLine1 || ""}, ${selectedCustomer.address?.addressLine2 || ""}, ${selectedCustomer.address?.district || ""}, ${selectedCustomer.address?.state || ""}, ${selectedCustomer.address?.pincode || ""}`} />
+                                            </Box>
+                                        </Box>
+                                    </Card>
+
+                                    {selectedCustomer.type === 'CORPORATE' ? (
+                                        <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                                            <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Box sx={{ width: 4, height: 16, backgroundColor: '#10B981', borderRadius: 2 }} />
+                                                Delivery Sites ({selectedCustomer.sites?.length || 0})
+                                            </Typography>
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                {(selectedCustomer.sites || []).map((site, idx) => (
+                                                    <Box key={idx} sx={{ p: 2, border: '1px solid #F3F4F6', borderRadius: '12px' }}>
+                                                        <Typography sx={{ fontWeight: 700, color: '#0057FF' }}>{site.siteName}</Typography>
+                                                        <Typography variant="body2" sx={{ color: '#6B7280' }}>{site.phone}</Typography>
+                                                        <Box sx={{ mt: 2 }}>
+                                                            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: '8px', border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+                                                                <Table size="small">
+                                                                    <TableHead sx={{ bgcolor: '#F9FAFB' }}>
+                                                                        <TableRow>
+                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>PRODUCT</TableCell>
+                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>TRANSPORT</TableCell>
+                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>RATE</TableCell>
+                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>UOM</TableCell>
+                                                                        </TableRow>
+                                                                    </TableHead>
+                                                                    <TableBody>
+                                                                        {site.prices?.map((p, pIdx) => {
+                                                                            const product = products.find(pr => pr.id === p.productId);
+                                                                            return (
+                                                                                <TableRow key={pIdx} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                                                                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>{product?.name || p.productId}</TableCell>
+                                                                                    <TableCell sx={{ fontSize: '11px', color: '#6B7280' }}>{p.transportRate > 0 ? `₹${p.transportRate}` : 'None'}</TableCell>
+                                                                                    <TableCell sx={{ fontSize: '11px', fontWeight: 700 }}>₹{p.rate}</TableCell>
+                                                                                    <TableCell sx={{ fontSize: '10px', color: '#9CA3AF' }}>{p.uom || 'TONS'}</TableCell>
+                                                                                </TableRow>
+                                                                            );
+                                                                        })}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </TableContainer>
+                                                        </Box>
+                                                    </Box>
+                                                ))}
+                                            </Box>
+                                        </Card>
+                                    ) : (
+                                        <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                                            <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                <Box sx={{ width: 4, height: 16, backgroundColor: '#10B981', borderRadius: 2 }} />
+                                                Pricing Configurations
+                                            </Typography>
+                                            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: '12px', border: '1px solid #F3F4F6', overflow: 'hidden' }}>
+                                                <Table size="small">
+                                                    <TableHead sx={{ bgcolor: '#F9FAFB' }}>
+                                                        <TableRow>
+                                                            <TableCell sx={{ fontWeight: 700, py: 1.5 }}>PRODUCT</TableCell>
+                                                            <TableCell sx={{ fontWeight: 700, py: 1.5 }}>CASH RATE</TableCell>
+                                                            <TableCell sx={{ fontWeight: 700, py: 1.5 }}>CREDIT RATE</TableCell>
+                                                            <TableCell sx={{ fontWeight: 700, py: 1.5 }}>UOM</TableCell>
+                                                        </TableRow>
+                                                    </TableHead>
+                                                    <TableBody>
+                                                        {(selectedCustomer.prices || []).length > 0 ? (
+                                                            (selectedCustomer.prices || []).map((price, idx) => {
+                                                                const product = products.find(p => p.id === price.productId);
+                                                                return (
+                                                                    <TableRow key={idx} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                                                                        <TableCell sx={{ fontWeight: 600, color: '#111827' }}>{product?.name || price.productId}</TableCell>
+                                                                        <TableCell sx={{ fontWeight: 700, color: '#059669' }}>₹{price.cashRate}</TableCell>
+                                                                        <TableCell sx={{ fontWeight: 700, color: '#2563EB' }}>₹{price.creditRate}</TableCell>
+                                                                        <TableCell sx={{ color: '#6B7280', fontSize: '12px' }}>{price.uom || 'TONS'}</TableCell>
+                                                                    </TableRow>
+                                                                );
+                                                            })
+                                                        ) : (
+                                                            <TableRow>
+                                                                <TableCell colSpan={4} align="center" sx={{ py: 3, color: '#9CA3AF italic' }}>No pricing configured</TableCell>
+                                                            </TableRow>
+                                                        )}
+                                                    </TableBody>
+                                                </Table>
+                                            </TableContainer>
+                                        </Card>
+                                    )}
+                                </Box>
+
+                                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
+                                    <Button
+                                        onClick={() => setViewModalOpen(false)}
+                                        variant="contained"
+                                        sx={{ 
+                                            borderRadius: '12px', px: 6, py: 1.2, 
+                                            textTransform: 'none', fontWeight: 700,
+                                            backgroundColor: '#111827',
+                                            '&:hover': { backgroundColor: '#000' }
+                                        }}
+                                    >
+                                        Close
+                                    </Button>
+                                </Box>
+                            </Box>
+                        )}
+                    </DialogContent>
+                </Dialog>
+
+                {/* Notification Snackbar */}
+                <Snackbar 
+                    open={snackbar.open} 
+                    autoHideDuration={6000} 
+                    onClose={handleCloseSnackbar}
+                    anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                >
+                    <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%', borderRadius: '12px', fontWeight: 600 }}>
+                        {snackbar.message}
+                    </Alert>
+                </Snackbar>
+
+                {/* Delete Confirmation Dialog */}
+                <Dialog 
+                    open={deleteConfirmOpen} 
+                    onClose={() => setDeleteConfirmOpen(false)}
+                    sx={{
+                        '& .MuiDialog-container': { alignItems: 'center', justifyContent: 'center', marginLeft: { md: '280px' }, width: { md: 'calc(100% - 280px)' } },
+                        '& .MuiBackdrop-root': { marginLeft: { md: '280px' } }
+                    }}
+                    PaperProps={{ sx: { borderRadius: '24px', padding: '16px', maxWidth: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.1)' } }}
+                >
+                    <DialogContent>
+                        <Box sx={{ textAlign: 'center', py: 2 }}>
+                            <Box sx={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: '#FEF2F2', display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '0 auto', mb: 3 }}>
+                                <DeleteIcon sx={{ fontSize: '32px', color: '#EF4444' }} />
+                            </Box>
+                            <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#111827' }}>Delete Customer</Typography>
+                            <Typography variant="body2" sx={{ color: '#6B7280', mb: 4, lineHeight: 1.6 }}>Are you sure you want to delete this customer? This action cannot be undone and the record will be permanently removed.</Typography>
+                            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                                <Button
+                                    onClick={() => setDeleteConfirmOpen(false)}
+                                    variant="outlined"
+                                    sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, color: '#6B7280', px: 4, py: 1, border: '1px solid #E5E7EB', '&:hover': { backgroundColor: '#F9FAFB' } }}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={handleConfirmDelete}
+                                    variant="contained"
+                                    sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, backgroundColor: '#EF4444', px: 4, py: 1, '&:hover': { backgroundColor: '#DC2626' }, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)' }}
+                                >
+                                    Delete
+                                </Button>
+                            </Box>
+                        </Box>
+                    </DialogContent>
+                </Dialog>
             </Box>
         </FormikProvider>
     );
 }
+
+// Helper Components for the View Modal
+const DetailItem = ({ label, value }) => (
+    <Box>
+        <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', mb: 0.5 }}>
+            {label}
+        </Typography>
+        <Typography sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
+            {value || "—"}
+        </Typography>
+    </Box>
+);

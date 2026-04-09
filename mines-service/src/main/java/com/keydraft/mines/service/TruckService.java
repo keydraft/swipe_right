@@ -18,6 +18,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.web.multipart.MultipartFile;
+
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -30,24 +32,34 @@ public class TruckService {
     private final TruckRepository truckRepository;
     private final TransporterRepository transporterRepository;
     private final CustomerRepository customerRepository;
+    private final FileStorageService fileStorageService;
 
     @Transactional
-    public TruckResponse upsertTruck(UUID id, TruckRequest request) {
+    public TruckResponse upsertTruckWithFiles(
+            UUID id, 
+            TruckRequest request,
+            MultipartFile rcFront,
+            MultipartFile rcBack,
+            MultipartFile insurance,
+            MultipartFile permit,
+            MultipartFile fc) {
+        
         Truck truck;
         if (id != null) {
             truck = truckRepository.findById(id).orElseThrow(() -> new RuntimeException("Truck not found"));
+        } else if (request.getTruckNo() != null) {
+            // Check if truck exists with this number to prevent duplicate key error
+            truck = truckRepository.findByTruckNo(request.getTruckNo()).orElse(new Truck());
         } else {
             truck = new Truck();
         }
 
         truck.setOwnershipType(request.getOwnershipType());
         
-        if (truck.getTruckNo() == null || truck.getTruckNo().isEmpty()) {
-            if (request.getTruckNo() != null && !request.getTruckNo().isEmpty()) {
-                truck.setTruckNo(request.getTruckNo());
-            } else {
-                truck.setTruckNo(generateTruckNo());
-            }
+        if (request.getTruckNo() != null && !request.getTruckNo().isEmpty()) {
+            truck.setTruckNo(request.getTruckNo());
+        } else if (truck.getTruckNo() == null || truck.getTruckNo().isEmpty()) {
+            truck.setTruckNo(generateTruckNo());
         }
         
         truck.setOwnerName(request.getOwnerName());
@@ -78,8 +90,20 @@ public class TruckService {
             truck.setCustomer(null);
         }
 
+        // Handle File Storage
+        if (rcFront != null) truck.setRcFrontPath(fileStorageService.storeFile(rcFront));
+        if (rcBack != null) truck.setRcBackPath(fileStorageService.storeFile(rcBack));
+        if (insurance != null) truck.setInsurancePath(fileStorageService.storeFile(insurance));
+        if (permit != null) truck.setPermitPath(fileStorageService.storeFile(permit));
+        if (fc != null) truck.setFcPath(fileStorageService.storeFile(fc));
+
         Truck saved = truckRepository.save(truck);
         return mapToResponse(saved);
+    }
+
+    @Transactional
+    public TruckResponse upsertTruck(UUID id, TruckRequest request) {
+        return upsertTruckWithFiles(id, request, null, null, null, null, null);
     }
 
     public List<TruckResponse> getAllTrucksList() {
