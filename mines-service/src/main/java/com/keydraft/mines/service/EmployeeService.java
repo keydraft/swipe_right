@@ -228,18 +228,41 @@ public class EmployeeService {
 
             // Mapping for Partner: Multiple Companies
             if ("PARTNER".equals(req.getRole()) && req.getCompanyIds() != null) {
-                userCompanyRepository.deleteByUser(user);
+                List<UserCompany> existing = userCompanyRepository.findByUser(user);
+                // Remove mappings not in the new list
+                existing.stream()
+                        .filter(uc -> !req.getCompanyIds().contains(uc.getCompany().getId()))
+                        .forEach(userCompanyRepository::delete);
+                // Add mappings that don't already exist
                 for (UUID coId : req.getCompanyIds()) {
-                    Company co = companyRepository.findById(coId).orElseThrow();
-                    userCompanyRepository.save(UserCompany.builder().user(user).company(co).build());
+                    if (existing.stream().noneMatch(uc -> uc.getCompany().getId().equals(coId))) {
+                        Company co = companyRepository.findById(coId).orElseThrow();
+                        userCompanyRepository.save(UserCompany.builder().user(user).company(co).build());
+                    }
                 }
             } else if (!"ADMIN".equals(req.getRole()) && emp.getBranch() != null) {
-                userCompanyRepository.deleteByUser(user);
-                userCompanyRepository.save(UserCompany.builder()
-                        .user(user)
-                        .company(emp.getBranch().getCompany())
-                        .branch(emp.getBranch())
-                        .build());
+                Company targetCo = emp.getBranch().getCompany();
+                List<UserCompany> existing = userCompanyRepository.findByUser(user);
+
+                UserCompany matchingUc = null;
+                for (UserCompany uc : existing) {
+                    if (uc.getCompany().getId().equals(targetCo.getId())) {
+                        matchingUc = uc;
+                    } else {
+                        userCompanyRepository.delete(uc);
+                    }
+                }
+
+                if (matchingUc != null) {
+                    matchingUc.setBranch(emp.getBranch());
+                    userCompanyRepository.save(matchingUc);
+                } else {
+                    userCompanyRepository.save(UserCompany.builder()
+                            .user(user)
+                            .company(targetCo)
+                            .branch(emp.getBranch())
+                            .build());
+                }
             }
         }
 
@@ -263,8 +286,7 @@ public class EmployeeService {
                     cb.like(cb.lower(root.get("lastName")), pattern),
                     cb.like(cb.lower(root.get("employeeCode")), pattern),
                     cb.like(cb.lower(root.get("contactNumber")), pattern),
-                    cb.like(cb.lower(root.get("email")), pattern)
-            );
+                    cb.like(cb.lower(root.get("email")), pattern));
         };
 
         Page<Employee> page = employeeRepository.findAll(spec, pageable);

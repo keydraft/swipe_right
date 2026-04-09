@@ -6,7 +6,7 @@ import {
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
     Select, MenuItem, Switch, FormControlLabel, TablePagination,
-    CircularProgress, Grid, Divider
+    CircularProgress, Grid, Divider, Snackbar, Alert
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, FileDownloadOutlined as DownloadIcon,
@@ -34,6 +34,18 @@ export default function CompanyPage() {
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [totalElements, setTotalElements] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+
+    // Notification State
+    const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
+    const handleCloseSnackbar = () => setSnackbar({ ...snackbar, open: false });
+
+    // Delete Confirmation State
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteTargetIndex, setDeleteTargetIndex] = useState(null);
+
+    // View Details State
+    const [viewModalOpen, setViewModalOpen] = useState(false);
+    const [selectedCompany, setSelectedCompany] = useState(null);
 
     const fetchCompanies = async () => {
         setIsLoading(true);
@@ -153,7 +165,11 @@ export default function CompanyPage() {
                 }
             } catch (error) {
                 console.error("Error saving company:", error);
-                alert("Failed to save company: " + (error.response?.data?.message || "Unknown error"));
+                setSnackbar({
+                    open: true,
+                    message: "Failed to save company: " + (error.response?.data?.message || "Unknown error"),
+                    severity: "error"
+                });
             }
         },
     });
@@ -264,17 +280,32 @@ export default function CompanyPage() {
 
     const paginatedCompanies = filteredCompanies.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
-    const handleDeleteCompany = async (index) => {
-        const companyId = companies[index].id;
-        if (window.confirm("Are you sure you want to delete this company?")) {
+    const handleViewCompany = (index) => {
+        setSelectedCompany(companies[index]);
+        setViewModalOpen(true);
+    };
+
+    const handleDeleteCompany = (index) => {
+        setDeleteTargetIndex(index);
+        setDeleteConfirmOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (deleteTargetIndex !== null) {
+            const companyId = companies[deleteTargetIndex].id;
             try {
                 const response = await adminApi.deleteCompany(companyId);
                 if (response.success) {
-                    setCompanies(companies.filter((_, i) => i !== index));
+                    setCompanies(companies.filter((_, i) => i !== deleteTargetIndex));
+                    setDeleteConfirmOpen(false);
+                    setDeleteTargetIndex(null);
+                    setSnackbar({ open: true, message: "Company deleted successfully", severity: "success" });
+                } else {
+                    setSnackbar({ open: true, message: response.message || "Failed to delete company", severity: "error" });
                 }
             } catch (error) {
                 console.error("Error deleting company:", error);
-                alert("Failed to delete company: " + (error.response?.data?.message || "Unknown error"));
+                setSnackbar({ open: true, message: "Failed to delete company: Unknown error", severity: "error" });
             }
         }
     };
@@ -315,15 +346,15 @@ export default function CompanyPage() {
 
     const handleAddBranch = () => {
         if (!currentBranch.name || !currentBranch.plantType || !currentBranch.contactNo || !currentBranch.addressLine1 || !currentBranch.district || !currentBranch.state || !currentBranch.pincode) {
-            alert("Please fill in the required fields: Branch Name, Plant Type, Contact No, Address Line 1, District, State, and Pincode.");
+            setSnackbar({ open: true, message: "Please fill in the required fields: Branch Name, Plant Type, Contact No, Address Line 1, District, State, and Pincode.", severity: "error" });
             return;
         }
         if (!phoneRegex.test(currentBranch.contactNo)) {
-            alert("Contact No must be 10 to 12 digits.");
+            setSnackbar({ open: true, message: "Contact No must be 10 to 12 digits.", severity: "error" });
             return;
         }
         if (!pincodeRegex.test(currentBranch.pincode)) {
-            alert("Pincode must be exactly 6 digits.");
+            setSnackbar({ open: true, message: "Pincode must be exactly 6 digits.", severity: "error" });
             return;
         }
 
@@ -352,15 +383,15 @@ export default function CompanyPage() {
 
     const handleAddBankAccount = () => {
         if (!currentBankAccount.accountName || !currentBankAccount.accountNumber || !currentBankAccount.bankName || !currentBankAccount.ifscCode) {
-            alert("Please fill in the required fields: Account Name, Account No, Bank Name, and IFSC.");
+            setSnackbar({ open: true, message: "Please fill in the required fields: Account Name, Account No, Bank Name, and IFSC.", severity: "error" });
             return;
         }
         if (!/^[0-9]{9,18}$/.test(currentBankAccount.accountNumber)) {
-            alert("Account Number must be 9-18 digits.");
+            setSnackbar({ open: true, message: "Account Number must be 9-18 digits.", severity: "error" });
             return;
         }
         if (!ifscRegex.test(currentBankAccount.ifscCode)) {
-            alert("Invalid IFSC Code format.");
+            setSnackbar({ open: true, message: "Invalid IFSC Code format.", severity: "error" });
             return;
         }
 
@@ -971,7 +1002,11 @@ export default function CompanyPage() {
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
                                             <Tooltip title="View">
-                                                <IconButton size="small" sx={{ color: palette.primary.main }}>
+                                                <IconButton 
+                                                    size="small" 
+                                                    sx={{ color: palette.primary.main }}
+                                                    onClick={() => handleViewCompany(index)}
+                                                >
                                                     <ViewIcon fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
@@ -1099,6 +1134,121 @@ export default function CompanyPage() {
                     </Box>
                 </DialogContent>
             </Dialog>
+
+            {/* Notification Snackbar */}
+            <Snackbar 
+                open={snackbar.open} 
+                autoHideDuration={6000} 
+                onClose={handleCloseSnackbar}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%', borderRadius: '12px', fontWeight: 600 }}>
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog 
+                open={deleteConfirmOpen} 
+                onClose={() => setDeleteConfirmOpen(false)}
+                sx={{
+                    '& .MuiDialog-container': { alignItems: 'center', justifyContent: 'center', marginLeft: { md: '280px' }, width: { md: 'calc(100% - 280px)' } },
+                    '& .MuiBackdrop-root': { marginLeft: { md: '280px' } }
+                }}
+                PaperProps={{ sx: { borderRadius: '24px', padding: '16px', maxWidth: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.1)' } }}
+            >
+                <DialogContent>
+                    <Box sx={{ textAlign: 'center', py: 2 }}>
+                        <Box sx={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: '#FEF2F2', display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '0 auto', mb: 3 }}>
+                            <DeleteIcon sx={{ fontSize: '32px', color: '#EF4444' }} />
+                        </Box>
+                        <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#111827' }}>Delete Company</Typography>
+                        <Typography variant="body2" sx={{ color: '#6B7280', mb: 4, lineHeight: 1.6 }}>Are you sure you want to delete this company? This action cannot be undone and the record will be permanently removed.</Typography>
+                        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                            <Button
+                                onClick={() => setDeleteConfirmOpen(false)}
+                                variant="outlined"
+                                sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, color: '#6B7280', px: 4, py: 1, border: '1px solid #E5E7EB', '&:hover': { backgroundColor: '#F9FAFB' } }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleConfirmDelete}
+                                variant="contained"
+                                sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, backgroundColor: '#EF4444', px: 4, py: 1, '&:hover': { backgroundColor: '#DC2626' }, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)' }}
+                            >
+                                Delete
+                            </Button>
+                        </Box>
+                    </Box>
+                </DialogContent>
+            </Dialog>
+
+            {/* View Company Details Modal */}
+            <Dialog 
+                open={viewModalOpen} 
+                onClose={() => setViewModalOpen(false)}
+                maxWidth="md"
+                fullWidth
+                sx={{
+                    '& .MuiDialog-container': { alignItems: 'center', justifyContent: 'center', marginLeft: { md: '280px' }, width: { md: 'calc(100% - 280px)' } },
+                    '& .MuiBackdrop-root': { marginLeft: { md: '280px' } }
+                }}
+                PaperProps={{ sx: { borderRadius: '24px', padding: '16px', backgroundColor: '#F8FAFC' } }}
+            >
+                <DialogContent sx={{ p: { xs: 2, sm: 4 } }}>
+                    {selectedCompany && (
+                        <Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                <Box>
+                                    <Typography variant="h4" sx={{ fontWeight: 900, color: '#111827' }}>{selectedCompany.name}</Typography>
+                                    <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>GSTN: {selectedCompany.gstin || "N/A"}</Typography>
+                                </Box>
+                                <Box sx={{ px: 2, py: 1, borderRadius: '12px', backgroundColor: '#EBFDF5', color: '#10B981', fontWeight: 700, fontSize: '13px' }}>ACTIVE</Box>
+                            </Box>
+
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                {/* General Information */}
+                                <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{ width: 4, height: 16, backgroundColor: '#2D3FE2', borderRadius: 2 }} /> General Information
+                                    </Typography>
+                                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 3 }}>
+                                        <DetailItem label="Invoice Initial" value={selectedCompany.invoiceInitial} />
+                                        <DetailItem label="Contact Number" value={selectedCompany.phone} />
+                                        <DetailItem label="Alternate Number" value={selectedCompany.alternatePhoneNo} />
+                                        <DetailItem label="Email" value={selectedCompany.emailId} />
+                                        <DetailItem label="State" value={selectedCompany.address?.state} />
+                                        <DetailItem label="District" value={selectedCompany.address?.district} />
+                                        <DetailItem label="Pincode" value={selectedCompany.address?.pincode} />
+                                        <Box sx={{ gridColumn: '1 / -1' }}>
+                                            <DetailItem label="Address" value={`${selectedCompany.address?.addressLine1 || ""}, ${selectedCompany.address?.addressLine2 || ""}`} />
+                                        </Box>
+                                    </Box>
+                                </Card>
+                            </Box>
+
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
+                                <Button
+                                    onClick={() => setViewModalOpen(false)}
+                                    variant="contained"
+                                    sx={{ borderRadius: '12px', px: 6, py: 1.2, textTransform: 'none', fontWeight: 700, backgroundColor: '#111827', '&:hover': { backgroundColor: '#000' } }}
+                                >
+                                    Close
+                                </Button>
+                            </Box>
+                        </Box>
+                    )}
+                </DialogContent>
+            </Dialog>
         </Box>
     );
 }
+
+// Helper Components for the View Modal
+const DetailItem = ({ label, value }) => (
+    <Box>
+        <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', mb: 0.5 }}>{label}</Typography>
+        <Typography sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>{value || "—"}</Typography>
+    </Box>
+);

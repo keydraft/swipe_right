@@ -6,7 +6,8 @@ import {
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
     Select, MenuItem, Switch, FormControlLabel, Radio, RadioGroup,
-    TablePagination, Stepper, Step, StepLabel, CircularProgress
+    TablePagination, Stepper, Step, StepLabel, CircularProgress,
+    Snackbar, Alert
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, FileDownloadOutlined as DownloadIcon,
@@ -42,6 +43,18 @@ export default function EmployeePage() {
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+
+    // Notification State
+    const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
+    const handleCloseSnackbar = () => setSnackbar({ ...snackbar, open: false });
+
+    // Delete Confirmation State
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState(null);
+
+    // View Details State
+    const [viewModalOpen, setViewModalOpen] = useState(false);
+    const [selectedEmployee, setSelectedEmployee] = useState(null);
 
     const handleChangePage = (event, newPage) => setPage(newPage);
     const handleChangeRowsPerPage = (event) => {
@@ -125,7 +138,7 @@ export default function EmployeePage() {
                 const userRole = roleResp.data.find(r => r.name === user.roleName);
                 if (userRole) setCurrentUserRank(userRole.rank);
             }
-            
+
             await fetchEmployees();
         } catch (error) {
             console.error("Error fetching initial employee data:", error);
@@ -190,7 +203,11 @@ export default function EmployeePage() {
                 }
             } catch (error) {
                 console.error("Error saving employee:", error);
-                alert("Failed to save employee: " + (error.response?.data?.message || "Unknown error"));
+                setSnackbar({
+                    open: true,
+                    message: "Failed to save employee: " + (error.response?.data?.message || "Unknown error"),
+                    severity: "error"
+                });
             }
         },
     });
@@ -275,18 +292,31 @@ export default function EmployeePage() {
         setActiveStep(0);
     };
 
-    const handleDeleteEmployee = async (id) => {
-        if (window.confirm("Are you sure you want to delete this employee?")) {
+    const handleViewEmployee = (employee) => {
+        setSelectedEmployee(employee);
+        setViewModalOpen(true);
+    };
+
+    const handleDeleteEmployee = (id) => {
+        setDeleteTargetId(id);
+        setDeleteConfirmOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (deleteTargetId) {
             try {
-                const response = await employeeApi.delete(id);
+                const response = await employeeApi.delete(deleteTargetId);
                 if (response.success) {
-                    fetchInitialData();
+                    fetchEmployees();
+                    setDeleteConfirmOpen(false);
+                    setDeleteTargetId(null);
+                    setSnackbar({ open: true, message: "Employee deleted successfully", severity: "success" });
                 } else {
-                    alert(response.message || "Failed to delete employee");
+                    setSnackbar({ open: true, message: response.message || "Failed to delete employee", severity: "error" });
                 }
             } catch (error) {
                 console.error("Error deleting employee:", error);
-                alert("An error occurred while deleting the employee");
+                setSnackbar({ open: true, message: "An error occurred while deleting the employee", severity: "error" });
             }
         }
     };
@@ -799,7 +829,11 @@ export default function EmployeePage() {
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
                                             <Tooltip title="View">
-                                                <IconButton size="small" sx={{ color: palette.primary.main }}>
+                                                <IconButton 
+                                                    size="small" 
+                                                    sx={{ color: palette.primary.main }}
+                                                    onClick={() => handleViewEmployee(employee)}
+                                                >
                                                     <ViewIcon fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
@@ -930,6 +964,254 @@ export default function EmployeePage() {
                     </Box>
                 </DialogContent>
             </Dialog>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog 
+                open={deleteConfirmOpen} 
+                onClose={() => setDeleteConfirmOpen(false)}
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginLeft: { md: '280px' },
+                        width: { md: 'calc(100% - 280px)' }
+                    },
+                    '& .MuiBackdrop-root': {
+                        marginLeft: { md: '280px' }
+                    }
+                }}
+                PaperProps={{
+                    sx: {
+                        borderRadius: '24px',
+                        padding: '16px',
+                        maxWidth: '400px',
+                        boxShadow: '0 10px 40px rgba(0,0,0,0.1)'
+                    }
+                }}
+            >
+                <DialogContent>
+                    <Box sx={{ textAlign: 'center', py: 2 }}>
+                        <Box sx={{ 
+                            width: 64, height: 64, borderRadius: '50%', 
+                            backgroundColor: '#FEF2F2', display: 'flex', 
+                            justifyContent: 'center', alignItems: 'center', 
+                            margin: '0 auto', mb: 3 
+                        }}>
+                            <DeleteIcon sx={{ fontSize: '32px', color: '#EF4444' }} />
+                        </Box>
+                        <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#111827' }}>
+                            Delete Employee
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#6B7280', mb: 4, lineHeight: 1.6 }}>
+                            Are you sure you want to delete this employee? This action cannot be undone and the record will be permanently removed.
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                            <Button
+                                onClick={() => setDeleteConfirmOpen(false)}
+                                variant="outlined"
+                                sx={{ 
+                                    borderRadius: '12px', 
+                                    textTransform: 'none', 
+                                    fontWeight: 600, 
+                                    color: '#6B7280', 
+                                    px: 4,
+                                    py: 1,
+                                    border: '1px solid #E5E7EB',
+                                    '&:hover': { backgroundColor: '#F9FAFB' }
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleConfirmDelete}
+                                variant="contained"
+                                sx={{ 
+                                    borderRadius: '12px', 
+                                    textTransform: 'none', 
+                                    fontWeight: 600, 
+                                    backgroundColor: '#EF4444', 
+                                    px: 4,
+                                    py: 1,
+                                    '&:hover': { backgroundColor: '#DC2626' },
+                                    boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)'
+                                }}
+                            >
+                                Delete
+                            </Button>
+                        </Box>
+                    </Box>
+                </DialogContent>
+            </Dialog>
+
+            {/* Notification Snackbar */}
+            <Snackbar 
+                open={snackbar.open} 
+                autoHideDuration={6000} 
+                onClose={handleCloseSnackbar}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%', borderRadius: '12px', fontWeight: 600 }}>
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
+
+            {/* View Employee Details Modal */}
+            <Dialog 
+                open={viewModalOpen} 
+                onClose={() => setViewModalOpen(false)}
+                maxWidth="md"
+                fullWidth
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginLeft: { md: '280px' },
+                        width: { md: 'calc(100% - 280px)' }
+                    },
+                    '& .MuiBackdrop-root': {
+                        marginLeft: { md: '280px' }
+                    }
+                }}
+                PaperProps={{
+                    sx: {
+                        borderRadius: '24px',
+                        padding: '16px',
+                        backgroundColor: '#F8FAFC'
+                    }
+                }}
+            >
+                <DialogContent sx={{ p: { xs: 2, sm: 4 } }}>
+                    {selectedEmployee && (
+                        <Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                <Box>
+                                    <Typography variant="h4" sx={{ fontWeight: 900, color: '#111827' }}>
+                                        {selectedEmployee.firstName} {selectedEmployee.lastName}
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>
+                                        Employee ID: {selectedEmployee.id.substring(0, 8)} | Code: {selectedEmployee.employeeCode || "N/A"}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ 
+                                    px: 2, py: 1, borderRadius: '12px', 
+                                    backgroundColor: selectedEmployee.active ? '#EBFDF5' : '#FEF2F2',
+                                    color: selectedEmployee.active ? '#10B981' : '#EF4444',
+                                    fontWeight: 700, fontSize: '13px'
+                                }}>
+                                    {selectedEmployee.active ? 'ACTIVE' : 'INACTIVE'}
+                                </Box>
+                            </Box>
+
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                {/* Personal & Hierarchy */}
+                                <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{ width: 4, height: 16, backgroundColor: '#2D3FE2', borderRadius: 2 }} />
+                                        Personal & Company Information
+                                    </Typography>
+                                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 3 }}>
+                                        <DetailItem label="Gender" value={selectedEmployee.gender} />
+                                        <DetailItem label="Role" value={selectedEmployee.role?.roleName || selectedEmployee.designation || "N/A"} />
+                                        <DetailItem label="Date of Birth" value={selectedEmployee.dateOfBirth} />
+                                        <DetailItem label="Date of Joining" value={selectedEmployee.dateOfJoining} />
+                                        <DetailItem label="Contact Number" value={selectedEmployee.contactNumber || selectedEmployee.phone} />
+                                        <DetailItem label="Email" value={selectedEmployee.email || "N/A"} />
+                                        <DetailItem label="Company" value={selectedEmployee.company?.name || selectedEmployee.companyName || "N/A"} />
+                                        <DetailItem label="Branch" value={selectedEmployee.branch?.name || selectedEmployee.branchName || "N/A"} />
+                                        <DetailItem label="Pincode" value={selectedEmployee.address?.pincode || selectedEmployee.pincode || "N/A"} />
+                                        <Box sx={{ gridColumn: '1 / -1' }}>
+                                            <DetailItem label="Address" value={`${selectedEmployee.address?.addressLine1 || ""}, ${selectedEmployee.address?.addressLine2 || ""}, ${selectedEmployee.address?.district || ""}, ${selectedEmployee.address?.state || ""}`} />
+                                        </Box>
+                                    </Box>
+                                </Card>
+
+                                {/* Salary & Bank */}
+                                <Card sx={{ flex: '1 1 calc(50% - 12px)', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{ width: 4, height: 16, backgroundColor: '#10B981', borderRadius: 2 }} />
+                                        Salary & Bank Details
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        <DetailItem label="Salary Type" value={selectedEmployee.salaryType} />
+                                        <DetailItem label="Basic Salary" value={`₹${selectedEmployee.basicSalary?.toLocaleString()}`} />
+                                        <DetailItem label="Bank Name" value={selectedEmployee.bankName} />
+                                        <DetailItem label="Account Holder" value={selectedEmployee.bankAccountHolderName} />
+                                        <DetailItem label="Account Number" value={selectedEmployee.bankAccountNumber} />
+                                        <DetailItem label="IFSC Code" value={selectedEmployee.ifscCode} />
+                                    </Box>
+                                </Card>
+
+                                {/* Documents */}
+                                <Card sx={{ flex: '1 1 calc(50% - 12px)', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{ width: 4, height: 16, backgroundColor: '#F59E0B', borderRadius: 2 }} />
+                                        Documents & Login
+                                    </Typography>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                        <DetailItem label="Username" value={selectedEmployee.user?.username || selectedEmployee.username} />
+                                        <DetailItem label="Aadhaar Number" value={selectedEmployee.aadhaarNumber} />
+                                        <DetailItem label="PAN Number" value={selectedEmployee.panNumber} />
+                                        <DetailItem label="Driving License" value={selectedEmployee.drivingLicenseNumber || "N/A"} />
+                                        
+                                        <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                            {selectedEmployee.passbookFilePath && <DocumentBadge label="Passbook" path={selectedEmployee.passbookFilePath} />}
+                                            {selectedEmployee.aadhaarFilePath && <DocumentBadge label="Aadhaar" path={selectedEmployee.aadhaarFilePath} />}
+                                            {selectedEmployee.panFilePath && <DocumentBadge label="PAN" path={selectedEmployee.panFilePath} />}
+                                            {selectedEmployee.drivingLicenseFilePath && <DocumentBadge label="DL" path={selectedEmployee.drivingLicenseFilePath} />}
+                                        </Box>
+                                    </Box>
+                                </Card>
+                            </Box>
+
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
+                                <Button
+                                    onClick={() => setViewModalOpen(false)}
+                                    variant="contained"
+                                    sx={{ 
+                                        borderRadius: '12px', px: 6, py: 1.2, 
+                                        textTransform: 'none', fontWeight: 700,
+                                        backgroundColor: '#111827',
+                                        '&:hover': { backgroundColor: '#000' }
+                                    }}
+                                >
+                                    Close
+                                </Button>
+                            </Box>
+                        </Box>
+                    )}
+                </DialogContent>
+            </Dialog>
         </Box>
     );
 }
+
+// Helper Components for the View Modal
+const DetailItem = ({ label, value }) => (
+    <Box>
+        <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', mb: 0.5 }}>
+            {label}
+        </Typography>
+        <Typography sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
+            {value || "—"}
+        </Typography>
+    </Box>
+);
+
+const DocumentBadge = ({ label, path }) => {
+    const serverPath = "http://localhost:8080/uploads/employees/";
+    return (
+        <Box 
+            onClick={() => window.open(serverPath + path, "_blank")}
+            sx={{ 
+                px: 1.5, py: 0.8, borderRadius: '8px', backgroundColor: '#F3F4F6', 
+                color: '#374151', fontSize: '11px', fontWeight: 700, 
+                cursor: 'pointer', border: '1px solid #E5E7EB',
+                display: 'flex', alignItems: 'center', gap: 0.5,
+                '&:hover': { backgroundColor: '#E5E7EB' }
+            }}
+        >
+            <ViewIcon sx={{ fontSize: '14px' }} />
+            {label}
+        </Box>
+    );
+};
