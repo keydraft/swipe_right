@@ -1,5 +1,6 @@
 package com.keydraft.mines.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Builder;
 import lombok.Data;
 import java.util.UUID;
@@ -8,6 +9,7 @@ import java.util.UUID;
 @Builder
 public class TransporterResponse {
     private UUID id;
+    @JsonProperty("iCode")
     private String iCode;
     private String name;
     private String gstin;

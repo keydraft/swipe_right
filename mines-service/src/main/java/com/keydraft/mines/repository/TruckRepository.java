@@ -11,5 +11,6 @@ import java.util.UUID;
 @Repository
 public interface TruckRepository extends JpaRepository<Truck, UUID>, JpaSpecificationExecutor<Truck> {
     boolean existsByTruckNo(String truckNo);
+    Optional<Truck> findByTruckNo(String truckNo);
     Optional<Truck> findTopByOrderByTruckNoDesc();
 }

@@ -5,11 +5,12 @@ import {
     Box, Typography, Card, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
-    CircularProgress, Grid, Divider, TablePagination
+    CircularProgress, Grid, Divider, TablePagination,
+    Snackbar, Alert
 } from "@mui/material";
 import {
-    SearchOutlined as SearchIcon, AddOutlined as AddIcon, 
-    VisibilityOutlined as ViewIcon, EditOutlined as EditIcon, 
+    SearchOutlined as SearchIcon, AddOutlined as AddIcon,
+    VisibilityOutlined as ViewIcon, EditOutlined as EditIcon,
     DeleteOutline as DeleteIcon, FileDownloadOutlined as DownloadIcon,
     PrintOutlined as PrintIcon, SortOutlined as SortIcon
 } from "@mui/icons-material";
@@ -17,6 +18,7 @@ import { palette } from "@/theme";
 import { transporterApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
+import { phoneRegex, panRegex, gstinRegex, pincodeRegex } from "@/utils/validationSchemas";
 
 export default function TransporterPage() {
     const [searchQuery, setSearchQuery] = useState("");
@@ -26,6 +28,18 @@ export default function TransporterPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [showSuccess, setShowSuccess] = useState(false);
+
+    // Notification State
+    const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
+    const handleCloseSnackbar = () => setSnackbar({ ...snackbar, open: false });
+
+    // Delete Confirmation State
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState(null);
+
+    // View Details State
+    const [viewModalOpen, setViewModalOpen] = useState(false);
+    const [selectedTransporter, setSelectedTransporter] = useState(null);
 
     // Pagination State
     const [page, setPage] = useState(0);
@@ -64,8 +78,24 @@ export default function TransporterPage() {
     };
 
     const transporterValidationSchema = Yup.object({
+        icode: Yup.string()
+            .min(2, "Code must be at least 2 characters")
+            .max(10, "Code must not exceed 10 characters")
+            .required("Transporter Code is required"),
         name: Yup.string().required("Transporter name is required"),
-        phone: Yup.string().required("Phone number is required"),
+        phone: Yup.string()
+            .matches(phoneRegex, "Phone must be 10-12 digits")
+            .required("Phone number is required"),
+        email: Yup.string().email("Invalid email format"),
+        gstin: Yup.string().matches(gstinRegex, "Invalid GSTIN format"),
+        address: Yup.object({
+            addressLine1: Yup.string().required("Address is required"),
+            district: Yup.string().required("District is required"),
+            state: Yup.string().required("State is required"),
+            pincode: Yup.string()
+                .matches(pincodeRegex, "Pincode must be 6 digits")
+                .required("Pincode is required")
+        })
     });
 
     const formik = useFormik({
@@ -127,16 +157,30 @@ export default function TransporterPage() {
         setShowSuccess(false);
     };
 
-    const handleDeleteTransporter = async (id) => {
-        if (window.confirm("Are you sure you want to delete this transporter?")) {
-            try {
-                const response = await transporterApi.delete(id);
-                if (response.success) {
-                    fetchTransporters();
-                }
-            } catch (error) {
-                console.error("Error deleting transporter:", error);
+    const handleViewTransporter = (transporter) => {
+        setSelectedTransporter(transporter);
+        setViewModalOpen(true);
+    };
+
+    const handleDeleteClick = (id) => {
+        setDeleteTargetId(id);
+        setDeleteConfirmOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        try {
+            const response = await transporterApi.delete(deleteTargetId);
+            if (response.success) {
+                setSnackbar({ open: true, message: "Transporter deleted successfully", severity: "success" });
+                fetchTransporters();
+            } else {
+                setSnackbar({ open: true, message: response.message || "Failed to delete transporter", severity: "error" });
             }
+        } catch (error) {
+            setSnackbar({ open: true, message: "An error occurred while deleting", severity: "error" });
+        } finally {
+            setDeleteConfirmOpen(false);
+            setDeleteTargetId(null);
         }
     };
 
@@ -149,13 +193,13 @@ export default function TransporterPage() {
         const fieldKeys = field.split('.');
         let value = formik.values;
         for (const key of fieldKeys) value = value?.[key];
-        
-        const error = fieldKeys.length > 1 
+
+        const error = fieldKeys.length > 1
             ? formik.touched[fieldKeys[0]]?.[fieldKeys[1]] && formik.errors[fieldKeys[0]]?.[fieldKeys[1]]
             : formik.touched[field] && formik.errors[field];
 
         return (
-            <Box sx={{ width: '100%' }}>
+            <Box sx={{ width: '100%', mb: 2 }}>
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
                 <TextField
                     fullWidth
@@ -175,7 +219,14 @@ export default function TransporterPage() {
                     onBlur={formik.handleBlur}
                     error={!!error}
                     helperText={error}
-                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
+                    sx={{
+                        '& .MuiOutlinedInput-root': {
+                            borderRadius: '12px',
+                            backgroundColor: '#F9FAFB',
+                            '& .MuiOutlinedInput-notchedOutline': { border: error ? '1px solid #d32f2f' : '1px solid #F3F4F6' }
+                        },
+                        '& .MuiFormHelperText-root': { ml: 1 }
+                    }}
                 />
             </Box>
         );
@@ -290,7 +341,7 @@ export default function TransporterPage() {
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
                                             <Tooltip title="View">
-                                                <IconButton size="small" sx={{ color: palette.primary.main }}>
+                                                <IconButton onClick={() => handleViewTransporter(t)} size="small" sx={{ color: palette.primary.main }}>
                                                     <ViewIcon fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
@@ -306,7 +357,7 @@ export default function TransporterPage() {
                                             <Tooltip title="Delete">
                                                 <IconButton
                                                     size="small"
-                                                    onClick={() => handleDeleteTransporter(t.id)}
+                                                    onClick={() => handleDeleteClick(t.id)}
                                                     sx={{ color: '#EF4444' }}
                                                 >
                                                     <DeleteIcon fontSize="small" />
@@ -339,11 +390,11 @@ export default function TransporterPage() {
             </Card>
 
             {/* Modal Section */}
-            <Dialog 
-                open={openModal} 
-                onClose={handleCloseModal} 
-                maxWidth="md" 
-                fullWidth 
+            <Dialog
+                open={openModal}
+                onClose={handleCloseModal}
+                maxWidth="md"
+                fullWidth
                 sx={{
                     '& .MuiDialog-container': {
                         alignItems: 'center',
@@ -402,41 +453,32 @@ export default function TransporterPage() {
                                     {isEditing ? "Edit Transporter" : "New Transporter"}
                                 </Typography>
                                 <form onSubmit={formik.handleSubmit}>
-                                    <Grid container spacing={3}>
+                                    <Grid container spacing={4}>
                                         <Grid item xs={12} md={6}>
+                                            {renderField("Transporter Code", "Enter code (e.g. VRS)", "text", "icode")}
                                             {renderField("Transporter Name", "Enter name", "text", "name")}
                                         </Grid>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Transporter Code", "Enter code", "text", "icode")}
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("Phone Number", "Enter phone", "text", "phone")}
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("GSTIN", "Enter GSTIN", "text", "gstin")}
+                                            {renderField("Phone Number", "Enter phone number", "text", "phone")}
+                                            {renderField("GSTIN Number", "Enter GSTIN", "text", "gstin")}
                                         </Grid>
 
-                                        <Grid item xs={12} sx={{ mt: 1 }}>
-                                            <Divider />
-                                            <Typography sx={{ fontWeight: 700, mt: 2, mb: 1, fontSize: '15px' }}>Address Details</Typography>
-                                        </Grid>
-
-                                        <Grid item xs={12}>
-                                            {renderField("Address Line 1", "Enter address", "text", "address.addressLine1")}
-                                        </Grid>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("District", "Enter district", "text", "address.district")}
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("State", "Enter state", "text", "address.state")}
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
+                                            {renderField("Address Line 1", "Enter street address", "text", "address.addressLine1")}
+                                            <Grid container spacing={2}>
+                                                <Grid item xs={6}>
+                                                    {renderField("District", "Enter district", "text", "address.district")}
+                                                </Grid>
+                                                <Grid item xs={6}>
+                                                    {renderField("State", "Enter state", "text", "address.state")}
+                                                </Grid>
+                                            </Grid>
                                             {renderField("Pincode", "Enter pincode", "text", "address.pincode")}
                                         </Grid>
 
                                         <Grid item xs={12} sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                                            <Button 
-                                                onClick={handleCloseModal} 
+                                            <Button
+                                                onClick={handleCloseModal}
                                                 sx={{ color: '#64748B', fontWeight: 700, textTransform: 'none' }}
                                             >
                                                 Cancel
@@ -462,6 +504,154 @@ export default function TransporterPage() {
                     </Box>
                 </DialogContent>
             </Dialog>
+
+    {/* View Transporter Details Modal */ }
+    < Dialog
+open = { viewModalOpen }
+onClose = {() => setViewModalOpen(false)}
+maxWidth = "md"
+fullWidth
+sx = {{
+    '& .MuiDialog-container': {
+        alignItems: 'center',
+            justifyContent: 'center',
+                marginLeft: { md: '280px' },
+        width: { md: 'calc(100% - 280px)' }
+    },
+    '& .MuiBackdrop-root': {
+        marginLeft: { md: '280px' }
+    }
+}}
+PaperProps = {{
+    sx: {
+        borderRadius: '24px',
+            padding: '16px',
+                backgroundColor: '#F8FAFC'
+    }
+}}
+            >
+    <DialogContent sx={{ p: { xs: 2, sm: 4 } }}>
+        {selectedTransporter && (
+            <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                    <Box>
+                        <Typography variant="h4" sx={{ fontWeight: 900, color: '#111827' }}>
+                            {selectedTransporter.name}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>
+                            Code: {selectedTransporter.icode} | Phone: {selectedTransporter.phone}
+                        </Typography>
+                    </Box>
+                    <Box sx={{
+                        px: 2, py: 1, borderRadius: '12px',
+                        backgroundColor: '#EBFDF5',
+                        color: '#10B981',
+                        fontWeight: 700, fontSize: '13px'
+                    }}>
+                        ACTIVE
+                    </Box>
+                </Box>
+
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                    <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                        <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Box sx={{ width: 4, height: 16, backgroundColor: '#2D3FE2', borderRadius: 2 }} />
+                            Transporter Details
+                        </Typography>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
+                            <DetailItem label="Full Name" value={selectedTransporter.name} />
+                            <DetailItem label="Transporter Code" value={selectedTransporter.icode} />
+                            <DetailItem label="Phone Number" value={selectedTransporter.phone} />
+                            <DetailItem label="GSTIN" value={selectedTransporter.gstin} />
+                            <DetailItem label="District" value={selectedTransporter.address?.district} />
+                            <DetailItem label="State" value={selectedTransporter.address?.state} />
+                            <DetailItem label="Pincode" value={selectedTransporter.address?.pincode} />
+                            <Box sx={{ gridColumn: '1 / -1' }}>
+                                <DetailItem label="Full Address" value={`${selectedTransporter.address?.addressLine1 || ""}, ${selectedTransporter.address?.addressLine2 || ""}`} />
+                            </Box>
+                        </Box>
+                    </Card>
+                </Box>
+
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
+                    <Button
+                        onClick={() => setViewModalOpen(false)}
+                        variant="contained"
+                        sx={{
+                            borderRadius: '12px', px: 6, py: 1.2,
+                            textTransform: 'none', fontWeight: 700,
+                            backgroundColor: '#111827',
+                            '&:hover': { backgroundColor: '#000' }
+                        }}
+                    >
+                        Close
+                    </Button>
+                </Box>
+            </Box>
+        )}
+    </DialogContent>
+            </Dialog >
+
+    {/* Notification Snackbar */ }
+    < Snackbar
+open = { snackbar.open }
+autoHideDuration = { 6000}
+onClose = { handleCloseSnackbar }
+anchorOrigin = {{ vertical: 'bottom', horizontal: 'right' }}
+            >
+    <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%', borderRadius: '12px', fontWeight: 600 }}>
+        {snackbar.message}
+    </Alert>
+            </Snackbar >
+
+    {/* Delete Confirmation Dialog */ }
+    < Dialog
+open = { deleteConfirmOpen }
+onClose = {() => setDeleteConfirmOpen(false)}
+sx = {{
+    '& .MuiDialog-container': { alignItems: 'center', justifyContent: 'center', marginLeft: { md: '280px' }, width: { md: 'calc(100% - 280px)' } },
+    '& .MuiBackdrop-root': { marginLeft: { md: '280px' } }
+}}
+PaperProps = {{ sx: { borderRadius: '24px', padding: '16px', maxWidth: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.1)' } }}
+            >
+    <DialogContent>
+        <Box sx={{ textAlign: 'center', py: 2 }}>
+            <Box sx={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: '#FEF2F2', display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '0 auto', mb: 3 }}>
+                <DeleteIcon sx={{ fontSize: '32px', color: '#EF4444' }} />
+            </Box>
+            <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#111827' }}>Delete Transporter</Typography>
+            <Typography variant="body2" sx={{ color: '#6B7280', mb: 4, lineHeight: 1.6 }}>Are you sure you want to delete this transporter? This action cannot be undone and the record will be permanently removed.</Typography>
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                <Button
+                    onClick={() => setDeleteConfirmOpen(false)}
+                    variant="outlined"
+                    sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, color: '#6B7280', px: 4, py: 1, border: '1px solid #E5E7EB', '&:hover': { backgroundColor: '#F9FAFB' } }}
+                >
+                    Cancel
+                </Button>
+                <Button
+                    onClick={handleConfirmDelete}
+                    variant="contained"
+                    sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, backgroundColor: '#EF4444', px: 4, py: 1, '&:hover': { backgroundColor: '#DC2626' }, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)' }}
+                >
+                    Delete
+                </Button>
+            </Box>
         </Box>
+    </DialogContent>
+            </Dialog >
+        </Box >
     );
 }
+
+// Helper Components for the View Modal
+const DetailItem = ({ label, value }) => (
+    <Box>
+        <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', mb: 0.5 }}>
+            {label}
+        </Typography>
+        <Typography sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
+            {value || "—"}
+        </Typography>
+    </Box>
+);

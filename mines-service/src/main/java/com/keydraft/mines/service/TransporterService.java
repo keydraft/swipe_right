@@ -34,12 +34,10 @@ public class TransporterService {
             transporter = new Transporter();
         }
 
-        if (transporter.getICode() == null || transporter.getICode().isEmpty()) {
-            if (request.getICode() != null && !request.getICode().isEmpty()) {
-                transporter.setICode(request.getICode());
-            } else {
-                transporter.setICode(generateTransporterCode());
-            }
+        if (request.getICode() != null && !request.getICode().isEmpty()) {
+            transporter.setICode(request.getICode());
+        } else if (transporter.getICode() == null || transporter.getICode().isEmpty()) {
+            transporter.setICode(generateTransporterCode());
         }
 
         transporter.setName(request.getName());

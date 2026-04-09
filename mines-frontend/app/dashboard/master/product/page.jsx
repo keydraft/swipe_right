@@ -5,7 +5,7 @@ import {
     Box, Typography, Card, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
-    Select, MenuItem, Switch, FormControlLabel, TablePagination, CircularProgress, Grid, Divider
+    Select, MenuItem, Switch, FormControlLabel, TablePagination, CircularProgress, Grid, Divider, Snackbar, Alert
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, FileDownloadOutlined as DownloadIcon,
@@ -33,11 +33,23 @@ export default function ProductPage() {
     const [editingId, setEditingId] = useState(null);
     const [showSuccess, setShowSuccess] = useState(false);
 
+    // View Details State
+    const [viewModalOpen, setViewModalOpen] = useState(false);
+    const [selectedProduct, setSelectedProduct] = useState(null);
+
     // Pagination State
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [totalElements, setTotalElements] = useState(0);
-    
+
+    // Notification State
+    const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
+    const handleCloseSnackbar = () => setSnackbar({ ...snackbar, open: false });
+
+    // Delete Confirmation State
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [deleteTargetId, setDeleteTargetId] = useState(null);
+
     const initialValues = {
         name: "",
         shortName: "",
@@ -53,7 +65,7 @@ export default function ProductPage() {
         name: Yup.string().required("Product name is required"),
         shortName: Yup.string().required("Short name is required"),
         hsnc: Yup.string().required("HSN Code is required"),
-        gst: Yup.number().typeError("GST must be a number").required("GST is required"),
+        gst: Yup.number().typeError("GST must be a number").min(0).max(100).required("GST is required"),
         rmType: Yup.string().required("RM Type is required"),
         companyId: Yup.string().required("Company is required")
     });
@@ -62,11 +74,11 @@ export default function ProductPage() {
         setIsLoading(true);
         try {
             await fetchProducts();
-            
+
             if (userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') {
                 const companyResp = await adminApi.getCompanies(0, 500); // Get companies for branch info
                 if (companyResp.success) {
-                      localStorage.setItem("companies", JSON.stringify(companyResp.data.content));
+                    localStorage.setItem("companies", JSON.stringify(companyResp.data.content));
                 }
             }
         } catch (error) {
@@ -236,6 +248,33 @@ export default function ProductPage() {
         setShowSuccess(false);
     };
 
+    const handleViewProduct = (product) => {
+        setSelectedProduct(product);
+        setViewModalOpen(true);
+    };
+
+    const handleDeleteClick = (id) => {
+        setDeleteTargetId(id);
+        setDeleteConfirmOpen(true);
+    };
+
+    const handleConfirmDelete = async () => {
+        try {
+            const response = await productApi.delete(deleteTargetId);
+            if (response.success) {
+                setSnackbar({ open: true, message: "Product deleted successfully", severity: "success" });
+                fetchProducts();
+            } else {
+                setSnackbar({ open: true, message: response.message || "Failed to delete product", severity: "error" });
+            }
+        } catch (error) {
+            setSnackbar({ open: true, message: "An error occurred while deleting", severity: "error" });
+        } finally {
+            setDeleteConfirmOpen(false);
+            setDeleteTargetId(null);
+        }
+    };
+
     const handleCloseModal = () => {
         setOpenModal(false);
         formik.resetForm();
@@ -246,33 +285,44 @@ export default function ProductPage() {
         const error = formik.touched[field] && formik.errors[field];
 
         return (
-            <Box sx={{ width: '100%' }}>
+            <Box sx={{ width: '100%', mb: 2 }}>
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
                 {isSelect ? (
-                    <Select
-                        fullWidth size="small"
-                        name={field}
-                        value={value}
-                        onChange={formik.handleChange}
-                        displayEmpty
-                        sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
-                    >
-                        <MenuItem value="">{placeholder}</MenuItem>
-                        {options.map((opt, i) => <MenuItem key={i} value={opt.value}>{opt.label}</MenuItem>)}
-                    </Select>
+                    <Box>
+                        <Select
+                            fullWidth size="small"
+                            name={field}
+                            value={value || ""}
+                            onChange={formik.handleChange}
+                            onBlur={formik.handleBlur}
+                            displayEmpty
+                            error={!!error}
+                            sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: error ? '1px solid #d32f2f' : '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                        >
+                            <MenuItem value="">{placeholder}</MenuItem>
+                            {options.map((opt, i) => <MenuItem key={i} value={opt.value}>{opt.label}</MenuItem>)}
+                        </Select>
+                        {error && <Typography sx={{ color: '#d32f2f', fontSize: '11px', mt: 0.5, ml: 1 }}>{error}</Typography>}
+                    </Box>
                 ) : (
                     <TextField
                         fullWidth size="small"
                         name={field}
                         type={type}
                         placeholder={placeholder}
-                        variant="outlined"
-                        value={value}
+                        value={value || ""}
                         onChange={formik.handleChange}
                         onBlur={formik.handleBlur}
                         error={!!error}
                         helperText={error}
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
+                        sx={{
+                            '& .MuiOutlinedInput-root': {
+                                borderRadius: '12px',
+                                backgroundColor: '#F9FAFB',
+                                '& .MuiOutlinedInput-notchedOutline': { border: error ? '1px solid #d32f2f' : '1px solid #F3F4F6' }
+                            },
+                            '& .MuiFormHelperText-root': { ml: 1 }
+                        }}
                     />
                 )}
             </Box>
@@ -388,11 +438,14 @@ export default function ProductPage() {
                                     </TableCell>
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+                                            <Tooltip title="View">
+                                                <IconButton onClick={() => handleViewProduct(p)} sx={{ color: palette.primary.main }} size="small"><ViewIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
                                             <Tooltip title="Edit">
                                                 <IconButton onClick={() => handleEditProduct(p)} sx={{ color: '#0057FF' }} size="small"><EditIcon fontSize="small" /></IconButton>
                                             </Tooltip>
                                             <Tooltip title="Delete">
-                                                <IconButton sx={{ color: '#EF4444' }} size="small"><DeleteIcon fontSize="small" /></IconButton>
+                                                <IconButton onClick={() => handleDeleteClick(p.id)} sx={{ color: '#EF4444' }} size="small"><DeleteIcon fontSize="small" /></IconButton>
                                             </Tooltip>
                                         </Box>
                                     </TableCell>
@@ -421,11 +474,11 @@ export default function ProductPage() {
             </Card>
 
             {/* Modal Section */}
-            <Dialog 
-                open={openModal} 
-                onClose={handleCloseModal} 
-                maxWidth="md" 
-                fullWidth 
+            <Dialog
+                open={openModal}
+                onClose={handleCloseModal}
+                maxWidth="md"
+                fullWidth
                 sx={{
                     '& .MuiDialog-container': {
                         alignItems: 'center',
@@ -474,20 +527,10 @@ export default function ProductPage() {
                                     {isEditing ? "Edit Product" : "New Product"}
                                 </Typography>
                                 <form onSubmit={formik.handleSubmit}>
-                                    <Grid container spacing={3}>
+                                    <Grid container spacing={4}>
                                         <Grid item xs={12} md={6}>
                                             {renderField("Product Name", "Enter name", false, "text", "name")}
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
                                             {renderField("Short Name", "Enter short name", false, "text", "shortName")}
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("HSN Code", "Enter HSN", false, "text", "hsnc")}
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("GST (%)", "Enter GST", false, "number", "gst")}
-                                        </Grid>
-                                        <Grid item xs={12}>
                                             {renderField("RM Type", "Select type", true, "text", "rmType", [
                                                 { label: "CRUSHER", value: "CRUSHER" },
                                                 { label: "QUARRY", value: "QUARRY" },
@@ -537,8 +580,6 @@ export default function ProductPage() {
                                         )}
 
                                         <Grid item xs={12} sx={{ mt: 1 }}>
-                                            <Divider />
-                                            <Typography sx={{ fontWeight: 700, mt: 2, mb: 1, fontSize: '15px' }}>Plant Pricing</Typography>
                                         </Grid>
 
                                         {formik.values.branchPrices.map((bp, idx) => (
@@ -581,6 +622,169 @@ export default function ProductPage() {
                     </Box>
                 </DialogContent>
             </Dialog>
+
+            {/* View Product Details Modal */}
+            <Dialog
+                open={viewModalOpen}
+                onClose={() => setViewModalOpen(false)}
+                maxWidth="md"
+                fullWidth
+                sx={{
+                    '& .MuiDialog-container': {
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginLeft: { md: '280px' },
+                        width: { md: 'calc(100% - 280px)' }
+                    },
+                    '& .MuiBackdrop-root': {
+                        marginLeft: { md: '280px' }
+                    }
+                }}
+                PaperProps={{
+                    sx: {
+                        borderRadius: '24px',
+                        padding: '16px',
+                        backgroundColor: '#F8FAFC'
+                    }
+                }}
+            >
+                <DialogContent sx={{ p: { xs: 2, sm: 4 } }}>
+                    {selectedProduct && (
+                        <Box>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                <Box>
+                                    <Typography variant="h4" sx={{ fontWeight: 900, color: '#111827' }}>
+                                        {selectedProduct.name}
+                                    </Typography>
+                                    <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>
+                                        Short Name: {selectedProduct.shortName} | HSN: {selectedProduct.hsnCode}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{
+                                    px: 2, py: 1, borderRadius: '12px',
+                                    backgroundColor: selectedProduct.active ? '#EBFDF5' : '#FEF2F2',
+                                    color: selectedProduct.active ? '#10B981' : '#EF4444',
+                                    fontWeight: 700, fontSize: '13px'
+                                }}>
+                                    {selectedProduct.active ? 'ACTIVE' : 'INACTIVE'}
+                                </Box>
+                            </Box>
+
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{ width: 4, height: 16, backgroundColor: '#2D3FE2', borderRadius: 2 }} />
+                                        Basic Information
+                                    </Typography>
+                                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
+                                        <DetailItem label="Full Name" value={selectedProduct.name} />
+                                        <DetailItem label="Short Name" value={selectedProduct.shortName} />
+                                        <DetailItem label="HSN Code" value={selectedProduct.hsnCode} />
+                                        <DetailItem label="GST Percentage" value={`${selectedProduct.gstPercentage}%`} />
+                                        <DetailItem label="RM Type" value={selectedProduct.rmType} />
+                                        <DetailItem label="Status" value={selectedProduct.active ? "Active" : "Inactive"} />
+                                    </Box>
+                                </Card>
+
+                                <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
+                                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                        <Box sx={{ width: 4, height: 16, backgroundColor: '#10B981', borderRadius: 2 }} />
+                                        Plant Pricing List
+                                    </Typography>
+                                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2 }}>
+                                        {(selectedProduct.prices || []).map((price, idx) => (
+                                            <Box key={idx} sx={{ p: 1.5, border: '1px solid #F3F4F6', borderRadius: '12px' }}>
+                                                <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase' }}>
+                                                    {price.branchName || "Branch"}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '15px', fontWeight: 800, color: '#0057FF' }}>
+                                                    ₹{price.rate?.toLocaleString()}
+                                                </Typography>
+                                            </Box>
+                                        ))}
+                                    </Box>
+                                </Card>
+                            </Box>
+
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
+                                <Button
+                                    onClick={() => setViewModalOpen(false)}
+                                    variant="contained"
+                                    sx={{
+                                        borderRadius: '12px', px: 6, py: 1.2,
+                                        textTransform: 'none', fontWeight: 700,
+                                        backgroundColor: '#111827',
+                                        '&:hover': { backgroundColor: '#000' }
+                                    }}
+                                >
+                                    Close
+                                </Button>
+                            </Box>
+                        </Box>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Notification Snackbar */}
+            <Snackbar
+                open={snackbar.open}
+                autoHideDuration={6000}
+                onClose={handleCloseSnackbar}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+            >
+                <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%', borderRadius: '12px', fontWeight: 600 }}>
+                    {snackbar.message}
+                </Alert>
+            </Snackbar>
+
+            {/* Delete Confirmation Dialog */}
+            <Dialog
+                open={deleteConfirmOpen}
+                onClose={() => setDeleteConfirmOpen(false)}
+                sx={{
+                    '& .MuiDialog-container': { alignItems: 'center', justifyContent: 'center', marginLeft: { md: '280px' }, width: { md: 'calc(100% - 280px)' } },
+                    '& .MuiBackdrop-root': { marginLeft: { md: '280px' } }
+                }}
+                PaperProps={{ sx: { borderRadius: '24px', padding: '16px', maxWidth: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.1)' } }}
+            >
+                <DialogContent>
+                    <Box sx={{ textAlign: 'center', py: 2 }}>
+                        <Box sx={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: '#FEF2F2', display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '0 auto', mb: 3 }}>
+                            <DeleteIcon sx={{ fontSize: '32px', color: '#EF4444' }} />
+                        </Box>
+                        <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#111827' }}>Delete Product</Typography>
+                        <Typography variant="body2" sx={{ color: '#6B7280', mb: 4, lineHeight: 1.6 }}>Are you sure you want to delete this product? This action cannot be undone and the record will be permanently removed.</Typography>
+                        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                            <Button
+                                onClick={() => setDeleteConfirmOpen(false)}
+                                variant="outlined"
+                                sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, color: '#6B7280', px: 4, py: 1, border: '1px solid #E5E7EB', '&:hover': { backgroundColor: '#F9FAFB' } }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={handleConfirmDelete}
+                                variant="contained"
+                                sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, backgroundColor: '#EF4444', px: 4, py: 1, '&:hover': { backgroundColor: '#DC2626' }, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)' }}
+                            >
+                                Delete
+                            </Button>
+                        </Box>
+                    </Box>
+                </DialogContent>
+            </Dialog>
         </Box>
     );
 }
+
+// Helper Components for the View Modal
+const DetailItem = ({ label, value }) => (
+    <Box>
+        <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', mb: 0.5 }}>
+            {label}
+        </Typography>
+        <Typography sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
+            {value || "—"}
+        </Typography>
+    </Box>
+);
