@@ -11,6 +11,7 @@ import com.keydraft.mines.repository.TransporterRepository;
 import com.keydraft.mines.repository.TruckRepository;
 import jakarta.persistence.criteria.JoinType;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -23,6 +24,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TruckService {
 
     private final TruckRepository truckRepository;
@@ -39,7 +41,15 @@ public class TruckService {
         }
 
         truck.setOwnershipType(request.getOwnershipType());
-        truck.setTruckNo(request.getTruckNo());
+        
+        if (truck.getTruckNo() == null || truck.getTruckNo().isEmpty()) {
+            if (request.getTruckNo() != null && !request.getTruckNo().isEmpty()) {
+                truck.setTruckNo(request.getTruckNo());
+            } else {
+                truck.setTruckNo(generateTruckNo());
+            }
+        }
+        
         truck.setOwnerName(request.getOwnerName());
         truck.setMake(request.getMake());
         truck.setModel(request.getModel());
@@ -107,6 +117,25 @@ public class TruckService {
 
     public void deleteTruck(UUID id) {
         truckRepository.deleteById(id);
+    }
+
+    private String generateTruckNo() {
+        String lastCode = truckRepository.findTopByOrderByTruckNoDesc()
+                .map(Truck::getTruckNo)
+                .filter(code -> code.startsWith("T"))
+                .orElse("T00000");
+
+        try {
+            int lastNum = Integer.parseInt(lastCode.substring(1));
+            String newCode = String.format("T%05d", lastNum + 1);
+            log.info("Generated Global Truck Series: {}", newCode);
+            return newCode;
+        } catch (Exception e) {
+            long count = truckRepository.count();
+            String fallback = String.format("T%05d", count + 1);
+            log.warn("Failed to parse last truck series {}, using count fallback: {}", lastCode, fallback);
+            return fallback;
+        }
     }
 
     private TruckResponse mapToResponse(Truck t) {

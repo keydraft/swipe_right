@@ -766,7 +766,7 @@ export default function EmployeePage() {
                     <Table sx={{ minWidth: 1000 }}>
                         <TableHead sx={{ backgroundColor: palette.background.paper }}>
                             <TableRow>
-                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>ID</TableCell>
+                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Emp Code</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>First Name</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Last Name</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Role</TableCell>
@@ -790,7 +790,7 @@ export default function EmployeePage() {
                                 </TableRow>
                             ) : employees.map((employee) => (
                                 <TableRow key={employee.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
-                                    <TableCell sx={{ fontSize: '12px', color: palette.text.secondary }}>{employee.id.substring(0, 8)}...</TableCell>
+                                    <TableCell sx={{ fontWeight: 700, color: '#0057FF', fontSize: '13px' }}>{employee.employeeCode}</TableCell>
                                     <TableCell>{employee.firstName}</TableCell>
                                     <TableCell>{employee.lastName}</TableCell>
                                     <TableCell>{employee.designation}</TableCell>

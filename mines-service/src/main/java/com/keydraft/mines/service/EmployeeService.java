@@ -107,21 +107,22 @@ public class EmployeeService {
     }
 
     private String generateEmployeeCode(Branch br) {
-        String code;
-        if (br == null) {
-            code = "SYS" + String.format("%03d", employeeRepository.count() + 1);
-        } else {
-            Company co = br.getCompany();
-            String coPart = (co.getInvoiceInitial() != null ? co.getInvoiceInitial()
-                    : co.getName().substring(0, Math.min(3, co.getName().length()))).toUpperCase()
-                    .replaceAll("[^A-Z0-9]", "");
-            String brPart = br.getName().toUpperCase().replaceAll("[^A-Z0-9]", "").substring(0,
-                    Math.min(3, br.getName().length()));
-            String seqPart = String.format("%03d", employeeRepository.countByBranch(br) + 1);
-            code = coPart + brPart + seqPart;
+        String lastCode = employeeRepository.findTopByOrderByEmployeeCodeDesc()
+                .map(Employee::getEmployeeCode)
+                .filter(code -> code.startsWith("E"))
+                .orElse("E00000");
+
+        try {
+            int lastNum = Integer.parseInt(lastCode.substring(1));
+            String newCode = String.format("E%05d", lastNum + 1);
+            log.info("Generated Global Employee Code: {}", newCode);
+            return newCode;
+        } catch (Exception e) {
+            long count = employeeRepository.count();
+            String fallback = String.format("E%05d", count + 1);
+            log.warn("Failed to parse last employee code {}, using count fallback: {}", lastCode, fallback);
+            return fallback;
         }
-        log.info("Generated Employee Code: {}", code);
-        return code;
     }
 
     @Transactional
@@ -263,8 +264,7 @@ public class EmployeeService {
                     cb.like(cb.lower(root.get("lastName")), pattern),
                     cb.like(cb.lower(root.get("employeeCode")), pattern),
                     cb.like(cb.lower(root.get("contactNumber")), pattern),
-                    cb.like(cb.lower(root.get("email")), pattern)
-            );
+                    cb.like(cb.lower(root.get("email")), pattern));
         };
 
         Page<Employee> page = employeeRepository.findAll(spec, pageable);

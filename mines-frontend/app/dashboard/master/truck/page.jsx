@@ -87,7 +87,6 @@ export default function TruckPage() {
     };
 
     const truckValidationSchema = Yup.object({
-        truckNo: Yup.string().required("Truck number is required"),
         ownershipType: Yup.string().required("Ownership type is required"),
         tareWeight: Yup.number().typeError("Must be a number").required("Tare weight is required"),
     });
@@ -460,9 +459,6 @@ export default function TruckPage() {
                                 </Typography>
                                 <form onSubmit={formik.handleSubmit}>
                                     <Grid container spacing={3}>
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("Truck Number", "Enter truck number", false, "text", "truckNo")}
-                                        </Grid>
                                         <Grid item xs={12} md={6}>
                                             {renderField("Ownership Type", "Select type", true, "text", "ownershipType", [
                                                 { label: "Owned", value: "OWN" },

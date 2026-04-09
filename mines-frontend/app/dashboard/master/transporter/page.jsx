@@ -65,7 +65,6 @@ export default function TransporterPage() {
 
     const transporterValidationSchema = Yup.object({
         name: Yup.string().required("Transporter name is required"),
-        iCode: Yup.string().required("Identification code is required"),
         phone: Yup.string().required("Phone number is required"),
     });
 
@@ -260,7 +259,7 @@ export default function TransporterPage() {
                     <Table>
                         <TableHead sx={{ backgroundColor: palette.background.paper }}>
                             <TableRow>
-                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>ID / Code</TableCell>
+                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Transporter Code</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Name</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Phone</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>GSTIN</TableCell>
@@ -404,9 +403,6 @@ export default function TransporterPage() {
                                 </Typography>
                                 <form onSubmit={formik.handleSubmit}>
                                     <Grid container spacing={3}>
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("Identification Code (I-Code)", "Enter code", "text", "iCode")}
-                                        </Grid>
                                         <Grid item xs={12} md={6}>
                                             {renderField("Transporter Name", "Enter name", "text", "name")}
                                         </Grid>

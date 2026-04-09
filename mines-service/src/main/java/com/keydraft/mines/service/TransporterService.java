@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -18,6 +19,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class TransporterService {
 
     private final TransporterRepository transporterRepository;
@@ -26,12 +28,20 @@ public class TransporterService {
     public TransporterResponse upsertTransporter(UUID id, TransporterRequest request) {
         Transporter transporter;
         if (id != null) {
-            transporter = transporterRepository.findById(id).orElseThrow(() -> new RuntimeException("Transporter not found"));
+            transporter = transporterRepository.findById(id)
+                    .orElseThrow(() -> new RuntimeException("Transporter not found"));
         } else {
             transporter = new Transporter();
         }
 
-        transporter.setICode(request.getICode());
+        if (transporter.getICode() == null || transporter.getICode().isEmpty()) {
+            if (request.getICode() != null && !request.getICode().isEmpty()) {
+                transporter.setICode(request.getICode());
+            } else {
+                transporter.setICode(generateTransporterCode());
+            }
+        }
+
         transporter.setName(request.getName());
         transporter.setGstin(request.getGstin());
         transporter.setPhone(request.getPhone());
@@ -63,8 +73,7 @@ public class TransporterService {
             return cb.or(
                     cb.like(cb.lower(root.get("name")), pattern),
                     cb.like(cb.lower(root.get("iCode")), pattern),
-                    cb.like(cb.lower(root.get("phone")), pattern)
-            );
+                    cb.like(cb.lower(root.get("phone")), pattern));
         };
 
         Page<Transporter> page = transporterRepository.findAll(spec, pageable);
@@ -84,6 +93,25 @@ public class TransporterService {
 
     public void deleteTransporter(UUID id) {
         transporterRepository.deleteById(id);
+    }
+
+    private String generateTransporterCode() {
+        String lastCode = transporterRepository.findTopByOrderByiCodeDesc()
+                .map(Transporter::getICode)
+                .filter(code -> code.startsWith("T"))
+                .orElse("T00000");
+
+        try {
+            int lastNum = Integer.parseInt(lastCode.substring(1));
+            String newCode = String.format("T%05d", lastNum + 1);
+            log.info("Generated Global Transporter Code: {}", newCode);
+            return newCode;
+        } catch (Exception e) {
+            long count = transporterRepository.count();
+            String fallback = String.format("T%05d", count + 1);
+            log.warn("Failed to parse last transporter code {}, using count fallback: {}", lastCode, fallback);
+            return fallback;
+        }
     }
 
     private TransporterResponse mapToResponse(Transporter t) {
