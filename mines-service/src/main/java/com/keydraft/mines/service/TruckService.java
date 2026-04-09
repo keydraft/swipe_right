@@ -102,17 +102,6 @@ public class TruckService {
             truck.setCustomer(null);
         }
 
-        // Handle File Storage
-        if (rcFront != null)
-            truck.setRcFrontPath(fileStorageService.storeFile(rcFront));
-        if (rcBack != null)
-            truck.setRcBackPath(fileStorageService.storeFile(rcBack));
-        if (insurance != null)
-            truck.setInsurancePath(fileStorageService.storeFile(insurance));
-        if (permit != null)
-            truck.setPermitPath(fileStorageService.storeFile(permit));
-        if (fc != null)
-            truck.setFcPath(fileStorageService.storeFile(fc));
 
         Truck saved = truckRepository.save(truck);
         return mapToResponse(saved);
