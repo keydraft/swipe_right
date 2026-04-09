@@ -9,7 +9,7 @@ import lombok.*;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AddressRequest {
-    
+
     @NotBlank(message = "Address Line 1 is required")
     private String addressLine1;
 
