@@ -13,6 +13,6 @@ import java.util.UUID;
 public interface TransporterRepository extends JpaRepository<Transporter, UUID>, JpaSpecificationExecutor<Transporter> {
     boolean existsByiCode(String iCode);
     
-    @Query("SELECT t FROM Transporter t ORDER BY t.iCode DESC LIMIT 1")
-    Optional<Transporter> findTopByOrderByiCodeDesc();
+    @Query("SELECT MAX(t.iCode) FROM Transporter t WHERE t.iCode LIKE :prefix% AND t.company.id = :companyId AND (:branchId IS NULL OR t.branch.id = :branchId)")
+    String findMaxTransporterCodeByPrefix(@org.springframework.data.repository.query.Param("prefix") String prefix, @org.springframework.data.repository.query.Param("companyId") UUID companyId, @org.springframework.data.repository.query.Param("branchId") UUID branchId);
 }

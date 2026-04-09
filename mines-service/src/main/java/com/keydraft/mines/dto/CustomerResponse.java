@@ -10,6 +10,7 @@ import java.util.UUID;
 @Builder
 public class CustomerResponse {
     private UUID id;
+    private String customerCode;
     private String name;
     private CustomerType type;
     private String phone;
@@ -19,4 +20,8 @@ public class CustomerResponse {
     private AddressResponse address;
     private List<CustomerSiteResponse> sites;
     private List<CustomerPriceResponse> prices;
+    private UUID companyId;
+    private String companyName;
+    private UUID branchId;
+    private String branchName;
 }

@@ -11,6 +11,11 @@ import java.util.UUID;
 @Builder
 public class TruckResponse {
     private UUID id;
+    private String truckCode;
+    private UUID companyId;
+    private String companyName;
+    private UUID branchId;
+    private String branchName;
     private OwnershipType ownershipType;
     private String truckNo;
     private String registerName;

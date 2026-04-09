@@ -16,11 +16,36 @@ import {
     CloudUploadOutlined as UploadIcon
 } from "@mui/icons-material";
 import { palette } from "@/theme";
-import { truckApi, transporterApi, customerApi } from "@/services/api";
+import { truckApi, transporterApi, customerApi, adminApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
+import Cookies from "js-cookie";
+
+// ─── Branch Dropdown Component ────────────────────────────
+function BranchDropdown({ companyId, value, onChange, renderField }) {
+    const [branches, setBranches] = React.useState([]);
+
+    React.useEffect(() => {
+        if (!companyId) { setBranches([]); return; }
+        adminApi.getBranches(companyId).then(res => {
+            if (res.success) {
+                const list = res.data || [];
+                setBranches(list);
+                // Auto-select first branch if none selected
+                if (!value && list.length > 0) {
+                    onChange(list[0].id);
+                }
+            }
+        }).catch(() => setBranches([]));
+    }, [companyId]);
+
+    return renderField("Branch *", "Select Branch", true, "text", "branchId",
+        branches.map(b => ({ label: b.name, value: b.id }))
+    );
+}
 
 export default function TruckPage() {
+    const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
     const [trucks, setTrucks] = useState([]);
@@ -44,6 +69,9 @@ export default function TruckPage() {
     const [selectedTruck, setSelectedTruck] = useState(null);
 
     // File state
+    const [allCompanies, setAllCompanies] = useState([]);
+    const [currentUser, setCurrentUser] = useState(null);
+    const [userCompanyInfo, setUserCompanyInfo] = useState([]);
     const [selectedFiles, setSelectedFiles] = useState({
         rcFront: null,
         rcBack: null,
@@ -96,6 +124,28 @@ export default function TruckPage() {
     };
 
     useEffect(() => {
+        const storedUser = localStorage.getItem("user");
+        if (storedUser) {
+            try {
+                const userData = JSON.parse(storedUser);
+                setCurrentUser(userData);
+                if (userData.role === "ADMIN") {
+                    adminApi.getCompanies(0, 1000).then(resp => {
+                        if (resp.success) {
+                            setAllCompanies(resp.data.content);
+                        }
+                    });
+                } else if (userData.companies) {
+                    setUserCompanyInfo(userData.companies);
+                    if (userData.companies.length > 0) {
+                        formik.setFieldValue("companyId", userData.companies[0].companyId);
+                        formik.setFieldValue("branchId", userData.companies[0].branchId || "");
+                    }
+                }
+            } catch (e) {
+                console.error("Error parsing user data", e);
+            }
+        }
         fetchInitialData();
     }, []);
 
@@ -133,6 +183,8 @@ export default function TruckPage() {
 
     const formik = useFormik({
         initialValues: {
+            companyId: "",
+            branchId: "",
             truckNo: "",
             ownershipType: "OWN",
             registerName: "",
@@ -192,6 +244,8 @@ export default function TruckPage() {
         setIsEditing(true);
         setEditingId(truck.id);
         formik.setValues({
+            companyId: truck.companyId || (userCompanyInfo.length > 0 ? userCompanyInfo[0].companyId : ""),
+            branchId: truck.branchId || (userCompanyInfo.length > 0 ? userCompanyInfo[0].branchId : ""),
             truckNo: truck.truckNo || "",
             ownershipType: truck.ownershipType || "OWN",
             registerName: truck.registerName || "",
@@ -383,20 +437,22 @@ export default function TruckPage() {
                 <Typography variant="h3" sx={{ fontWeight: 900, color: palette.text.secondary }}>
                     Truck Management
                 </Typography>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={handleOpenModal}
-                    sx={{
-                        background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
-                        textTransform: 'none',
-                        fontWeight: 600,
-                        height: '36px',
-                        borderRadius: '4px'
-                    }}
-                >
-                    New Truck
-                </Button>
+                {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={handleOpenModal}
+                        sx={{
+                            background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                            textTransform: 'none',
+                            fontWeight: 600,
+                            height: '36px',
+                            borderRadius: '4px'
+                        }}
+                    >
+                        New Truck
+                    </Button>
+                )}
             </Box>
 
             {/* Toolbar Section */}
@@ -449,6 +505,7 @@ export default function TruckPage() {
                     <Table>
                         <TableHead sx={{ backgroundColor: palette.background.paper }}>
                             <TableRow>
+                                <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Code</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Truck No</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Type</TableCell>
                                 <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Owner/Partner</TableCell>
@@ -471,6 +528,7 @@ export default function TruckPage() {
                                 </TableRow>
                             ) : trucks.map((t) => (
                                 <TableRow key={t.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
+                                    <TableCell sx={{ fontWeight: 700, color: '#0057FF' }}>{t.truckCode || 'N/A'}</TableCell>
                                     <TableCell sx={{ fontWeight: 500, color: palette.text.primary }}>{t.truckNo}</TableCell>
                                     <TableCell>
                                         <Box sx={{
@@ -493,24 +551,28 @@ export default function TruckPage() {
                                             <Tooltip title="View">
                                                 <IconButton onClick={() => handleViewTruck(t)} sx={{ color: palette.primary.main }} size="small"><ViewIcon fontSize="small" /></IconButton>
                                             </Tooltip>
-                                            <Tooltip title="Edit">
-                                                <IconButton
-                                                    size="small"
-                                                    sx={{ color: '#0057FF' }}
-                                                    onClick={() => handleEditTruck(t)}
-                                                >
-                                                    <EditIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title="Delete">
-                                                <IconButton
-                                                    size="small"
-                                                    sx={{ color: '#EF4444' }}
-                                                    onClick={() => handleDeleteClick(t.id)}
-                                                >
-                                                    <DeleteIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
+                                            {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
+                                                <>
+                                                    <Tooltip title="Edit">
+                                                        <IconButton
+                                                            size="small"
+                                                            sx={{ color: '#0057FF' }}
+                                                            onClick={() => handleEditTruck(t)}
+                                                        >
+                                                            <EditIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                    <Tooltip title="Delete">
+                                                        <IconButton
+                                                            size="small"
+                                                            sx={{ color: '#EF4444' }}
+                                                            onClick={() => handleDeleteClick(t.id)}
+                                                        >
+                                                            <DeleteIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </>
+                                            )}
                                         </Box>
                                     </TableCell>
                                 </TableRow>
@@ -603,6 +665,35 @@ export default function TruckPage() {
                                 <form onSubmit={formik.handleSubmit}>
                                     <Grid container spacing={4}>
                                         <Grid item xs={12} md={6}>
+                                            {currentUser?.role === "ADMIN" ? (
+                                                <>
+                                                    {renderField("Company *", "Select Company", true, "text", "companyId", allCompanies.map(c => ({ label: c.name, value: c.id })))}
+                                                    {formik.values.companyId && (
+                                                        <Box sx={{ mt: 1 }}>
+                                                            <BranchDropdown
+                                                                companyId={formik.values.companyId}
+                                                                value={formik.values.branchId}
+                                                                onChange={(val) => formik.setFieldValue("branchId", val)}
+                                                                renderField={renderField}
+                                                            />
+                                                        </Box>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {renderField("Company *", "Select Company", true, "text", "companyId", userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))}
+                                                    {formik.values.companyId && (
+                                                        <Box sx={{ mt: 1 }}>
+                                                            <BranchDropdown
+                                                                companyId={formik.values.companyId}
+                                                                value={formik.values.branchId}
+                                                                onChange={(val) => formik.setFieldValue("branchId", val)}
+                                                                renderField={renderField}
+                                                            />
+                                                        </Box>
+                                                    )}
+                                                </>
+                                            )}
                                             {renderField("Truck Number", "Enter truck number (e.g. MH12AB1234)", false, "text", "truckNo")}
                                             {renderField("Ownership Type", "Select type", true, "text", "ownershipType", [
                                                 { label: "Owned", value: "OWN" },

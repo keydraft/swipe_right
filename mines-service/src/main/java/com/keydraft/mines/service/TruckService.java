@@ -6,6 +6,8 @@ import com.keydraft.mines.dto.TruckResponse;
 import com.keydraft.mines.entity.Customer;
 import com.keydraft.mines.entity.Transporter;
 import com.keydraft.mines.entity.Truck;
+import com.keydraft.mines.repository.BranchRepository;
+import com.keydraft.mines.repository.CompanyRepository;
 import com.keydraft.mines.repository.CustomerRepository;
 import com.keydraft.mines.repository.TransporterRepository;
 import com.keydraft.mines.repository.TruckRepository;
@@ -33,6 +35,8 @@ public class TruckService {
     private final TransporterRepository transporterRepository;
     private final CustomerRepository customerRepository;
     private final FileStorageService fileStorageService;
+    private final CompanyRepository companyRepository;
+    private final BranchRepository branchRepository;
 
     @Transactional
     public TruckResponse upsertTruckWithFiles(
@@ -47,20 +51,27 @@ public class TruckService {
         Truck truck;
         if (id != null) {
             truck = truckRepository.findById(id).orElseThrow(() -> new RuntimeException("Truck not found"));
-        } else if (request.getTruckNo() != null) {
-            // Check if truck exists with this number to prevent duplicate key error
-            truck = truckRepository.findByTruckNo(request.getTruckNo()).orElse(new Truck());
         } else {
             truck = new Truck();
+            if (request.getCompanyId() != null) {
+                truck.setCompany(companyRepository.findById(request.getCompanyId())
+                        .orElseThrow(() -> new RuntimeException("Company not found")));
+            }
+            if (request.getBranchId() != null) {
+                truck.setBranch(branchRepository.findById(request.getBranchId())
+                        .orElseThrow(() -> new RuntimeException("Branch not found")));
+            }
+            truck.setTruckCode(generateTruckCode(request.getCompanyId(), request.getBranchId()));
+            if (request.getTruckNo() != null) {
+                // Check if truck exists with this number to prevent duplicate key error
+                truckRepository.findByTruckNo(request.getTruckNo()).ifPresent(t -> {
+                    throw new RuntimeException("Truck number already exists: " + request.getTruckNo());
+                });
+            }
         }
 
         truck.setOwnershipType(request.getOwnershipType());
-
-        if (request.getTruckNo() != null && !request.getTruckNo().isEmpty()) {
-            truck.setTruckNo(request.getTruckNo());
-        } else if (truck.getTruckNo() == null || truck.getTruckNo().isEmpty()) {
-            truck.setTruckNo(generateTruckNo());
-        }
+        truck.setTruckNo(request.getTruckNo());
 
         truck.setRegisterName(request.getRegisterName());
         truck.setMake(request.getMake());
@@ -148,28 +159,33 @@ public class TruckService {
         truckRepository.deleteById(id);
     }
 
-    private String generateTruckNo() {
-        String lastCode = truckRepository.findTopByOrderByTruckNoDesc()
-                .map(Truck::getTruckNo)
-                .filter(code -> code.startsWith("T"))
-                .orElse("T00000");
-
-        try {
-            int lastNum = Integer.parseInt(lastCode.substring(1));
-            String newCode = String.format("T%05d", lastNum + 1);
-            log.info("Generated Global Truck Series: {}", newCode);
-            return newCode;
-        } catch (Exception e) {
-            long count = truckRepository.count();
-            String fallback = String.format("T%05d", count + 1);
-            log.warn("Failed to parse last truck series {}, using count fallback: {}", lastCode, fallback);
-            return fallback;
+    private String generateTruckCode(UUID companyId, UUID branchId) {
+        if (companyId == null) {
+            return "TRK-" + UUID.randomUUID().toString().substring(0, 8);
         }
+        String prefix = "TRK-";
+        String maxCode = truckRepository.findMaxTruckCodeByPrefix(prefix, companyId, branchId);
+
+        int nextId = 1;
+        if (maxCode != null) {
+            try {
+                String numericPart = maxCode.substring(prefix.length());
+                nextId = Integer.parseInt(numericPart) + 1;
+            } catch (Exception e) {
+                // fall back
+            }
+        }
+        return prefix + String.format("%04d", nextId);
     }
 
     private TruckResponse mapToResponse(Truck t) {
         return TruckResponse.builder()
                 .id(t.getId())
+                .truckCode(t.getTruckCode())
+                .companyId(t.getCompany() != null ? t.getCompany().getId() : null)
+                .companyName(t.getCompany() != null ? t.getCompany().getName() : null)
+                .branchId(t.getBranch() != null ? t.getBranch().getId() : null)
+                .branchName(t.getBranch() != null ? t.getBranch().getName() : null)
                 .ownershipType(t.getOwnershipType())
                 .truckNo(t.getTruckNo())
                 .registerName(t.getRegisterName())

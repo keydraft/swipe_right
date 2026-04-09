@@ -45,8 +45,10 @@ public class EmployeeController {
     @GetMapping
     public ResponseEntity<ApiResponse<PaginatedResponse<EmployeeResponse>>> getAllEmployees(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID companyId,
+            @RequestParam(required = false) UUID branchId,
             @PageableDefault(size = 10) Pageable pageable) {
-        return ResponseEntity.ok(ApiResponse.success(employeeService.getAllEmployees(search, pageable), "Employees fetched successfully"));
+        return ResponseEntity.ok(ApiResponse.success(employeeService.getAllEmployees(search, companyId, branchId, pageable), "Employees fetched successfully"));
     }
 
     @DeleteMapping("/{id}")

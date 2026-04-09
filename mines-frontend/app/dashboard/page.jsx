@@ -1,11 +1,78 @@
 "use client";
 
 import React from "react";
-import { Box, Typography, Grid, Card, CardContent } from "@mui/material";
+import { Box, Typography, Grid, Card, CardContent, Select, MenuItem, FormControl, InputLabel } from "@mui/material";
 import { palette } from "@/theme";
 import { TrendingUp, TrendingDown } from "@mui/icons-material";
+import { useApp } from "@/context/AppContext";
+import { adminApi } from "@/services/api";
 
 export default function DashboardPage() {
+    const { user, selectedCompany, selectedBranch, updateSelectedCompany, updateSelectedBranch } = useApp();
+    const [companies, setCompanies] = React.useState([]);
+    const [branches, setBranches] = React.useState([]);
+
+    const userRole = (user?.roleName || user?.role || "").toUpperCase();
+    const isPowerUser = ['ADMIN', 'ROLE_ADMIN', 'PARTNER', 'ROLE_PARTNER', 'MANAGER', 'ROLE_MANAGER'].includes(userRole);
+
+    React.useEffect(() => {
+        if (user && user.companies) {
+            setCompanies(user.companies);
+        }
+    }, [user]);
+
+    React.useEffect(() => {
+        const loadBranches = async () => {
+            if (selectedCompany) {
+                const coId = selectedCompany.companyId || selectedCompany.id;
+                
+                // For Partners/Admins, fetch ALL branches
+                if (isPowerUser) {
+                    try {
+                        const response = await adminApi.getBranches(coId);
+                        if (response.success) {
+                            setBranches(response.data);
+                            // Default to 0th branch if none selected or company changed
+                            if (response.data.length > 0 && (!selectedBranch || !response.data.find(b => (b.id || b.branchId) === (selectedBranch.id || selectedBranch.branchId)))) {
+                                updateSelectedBranch(response.data[0]);
+                            }
+                        }
+                    } catch (error) {
+                        console.error("Error fetching branches:", error);
+                    }
+                } else {
+                    // For other roles, just use what's in the profile
+                    const profileBranches = user?.companies
+                        ?.filter(c => c.companyId === coId && c.branchId)
+                        .map(c => ({ id: c.branchId, name: c.branchName }));
+                    const branchList = profileBranches || [];
+                    setBranches(branchList);
+
+                    // Default to 0th branch for non-power users too
+                    if (branchList.length > 0 && (!selectedBranch || !branchList.find(b => (b.id || b.branchId) === (selectedBranch.id || selectedBranch.branchId)))) {
+                        updateSelectedBranch(branchList[0]);
+                    }
+                }
+            } else {
+                setBranches([]);
+            }
+        };
+
+        loadBranches();
+    }, [selectedCompany, user, isPowerUser]);
+
+    const handleCompanyChange = (e) => {
+        const coId = e.target.value;
+        const companyObj = companies.find(c => c.companyId === coId);
+        updateSelectedCompany(companyObj);
+    };
+
+    const handleBranchChange = (e) => {
+        const brId = e.target.value;
+        const branchObj = branches.find(b => (b.id || b.branchId) === brId);
+        updateSelectedBranch(branchObj || null);
+    };
+
     const stats = [
         { title: "Total Sales", value: "$24,500", diff: "+12%", isPositive: true },
         { title: "Daily Revenue", value: "$1,240", diff: "+5%", isPositive: true },
@@ -15,12 +82,50 @@ export default function DashboardPage() {
 
     return (
         <Box sx={{ animation: "fadeIn 0.5s ease-out" }}>
-            <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: palette.text.primary }}>
-                Dashboard
-            </Typography>
-            <Typography variant="body1" sx={{ color: palette.text.secondary, mb: 4 }}>
-                Welcome back! Here is what's happening today.
-            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 4 }}>
+                <Box>
+                    <Typography variant="h3" sx={{ fontWeight: 700, mb: 1, color: palette.text.primary }}>
+                        Dashboard
+                    </Typography>
+                    <Typography variant="body1" sx={{ color: palette.text.secondary }}>
+                        Welcome back, {user?.firstName || user?.username || "User"}! Here is what's happening today.
+                    </Typography>
+                </Box>
+
+                {isPowerUser && companies.length > 0 && (
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                        <FormControl size="small" sx={{ minWidth: 200 }}>
+                            <InputLabel id="company-select-label">Select Company</InputLabel>
+                            <Select
+                                labelId="company-select-label"
+                                value={selectedCompany?.companyId || ""}
+                                label="Select Company"
+                                onChange={handleCompanyChange}
+                                sx={{ borderRadius: '12px', bgcolor: '#fff' }}
+                            >
+                                {[...new Map(companies.map(item => [item.companyId, item])).values()].map((c) => (
+                                    <MenuItem key={c.companyId} value={c.companyId}>{c.companyName}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+
+                        <FormControl size="small" sx={{ minWidth: 200 }}>
+                            <InputLabel id="branch-select-label">All Branches</InputLabel>
+                            <Select
+                                labelId="branch-select-label"
+                                value={selectedBranch?.id || selectedBranch?.branchId || ""}
+                                label="Branch"
+                                onChange={handleBranchChange}
+                                sx={{ borderRadius: '12px', bgcolor: '#fff' }}
+                            >
+                                {branches.map((b) => (
+                                    <MenuItem key={b.id || b.branchId} value={b.id || b.branchId}>{b.name || b.branchName}</MenuItem>
+                                ))}
+                            </Select>
+                        </FormControl>
+                    </Box>
+                )}
+            </Box>
 
             <Grid container spacing={4}>
                 {stats.map((stat, i) => (

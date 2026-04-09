@@ -32,8 +32,10 @@ public class CustomerController {
     @GetMapping
     public ResponseEntity<ApiResponse<PaginatedResponse<CustomerResponse>>> getAllCustomers(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID companyId,
+            @RequestParam(required = false) UUID branchId,
             @PageableDefault(size = 10) Pageable pageable) {
-        PaginatedResponse<CustomerResponse> customers = customerService.getAllCustomers(search, pageable);
+        PaginatedResponse<CustomerResponse> customers = customerService.getAllCustomers(search, companyId, branchId, pageable);
         return ResponseEntity.ok(ApiResponse.success(customers, "Customers fetched successfully"));
     }
 

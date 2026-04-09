@@ -6,7 +6,7 @@ import {
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
     CircularProgress, Grid, Divider, TablePagination,
-    Snackbar, Alert
+    Snackbar, Alert, MenuItem
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon,
@@ -15,12 +15,34 @@ import {
     PrintOutlined as PrintIcon, SortOutlined as SortIcon
 } from "@mui/icons-material";
 import { palette } from "@/theme";
-import { transporterApi } from "@/services/api";
+import { transporterApi, adminApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
 import { phoneRegex, panRegex, gstinRegex, pincodeRegex } from "@/utils/validationSchemas";
+import Cookies from "js-cookie";
+
+// ─── Branch Dropdown Component ────────────────────────────
+function TransporterBranchDropdown({ companyId, value, onChange, renderField }) {
+    const [branches, setBranches] = React.useState([]);
+
+    React.useEffect(() => {
+        if (!companyId) { setBranches([]); return; }
+        adminApi.getBranches(companyId).then(res => {
+            if (res.success) {
+                const list = res.data || [];
+                setBranches(list);
+                if (!value && list.length > 0) onChange(list[0].id);
+            }
+        }).catch(() => setBranches([]));
+    }, [companyId]);
+
+    return renderField("Branch *", "Select Branch", "text", "branchId", true,
+        branches.map(b => ({ label: b.name, value: b.id }))
+    );
+}
 
 export default function TransporterPage() {
+    const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
     const [transporters, setTransporters] = useState([]);
@@ -62,6 +84,28 @@ export default function TransporterPage() {
     };
 
     useEffect(() => {
+        const storedUser = localStorage.getItem("user");
+        if (storedUser) {
+            try {
+                const userData = JSON.parse(storedUser);
+                setCurrentUser(userData);
+                if (userData.role === "ADMIN") {
+                    adminApi.getCompanies(0, 1000).then(resp => {
+                        if (resp.success) {
+                            setAllCompanies(resp.data.content);
+                        }
+                    });
+                } else if (userData.companies) {
+                    setUserCompanyInfo(userData.companies);
+                    if (userData.companies.length > 0) {
+                        formik.setFieldValue("companyId", userData.companies[0].companyId);
+                        formik.setFieldValue("branchId", userData.companies[0].branchId || "");
+                    }
+                }
+            } catch (e) {
+                console.error("Error parsing user data", e);
+            }
+        }
         const timer = setTimeout(() => {
             fetchTransporters();
         }, 300);
@@ -98,8 +142,15 @@ export default function TransporterPage() {
         })
     });
 
+    const [allCompanies, setAllCompanies] = useState([]);
+    const [currentUser, setCurrentUser] = useState(null);
+
+    const [userCompanyInfo, setUserCompanyInfo] = useState([]);
+
     const formik = useFormik({
         initialValues: {
+            companyId: "",
+            branchId: "",
             name: "",
             icode: "",
             gstin: "",
@@ -141,6 +192,8 @@ export default function TransporterPage() {
         setIsEditing(true);
         setEditingId(transporter.id);
         formik.setValues({
+            companyId: transporter.companyId || (userCompanyInfo.length > 0 ? userCompanyInfo[0].companyId : ""),
+            branchId: transporter.branchId || (userCompanyInfo.length > 0 ? userCompanyInfo[0].branchId : ""),
             name: transporter.name || "",
             icode: transporter.icode || "",
             gstin: transporter.gstin || "",
@@ -189,7 +242,7 @@ export default function TransporterPage() {
         formik.resetForm();
     };
 
-    const renderField = (label, placeholder, type = "text", field = "") => {
+    const renderField = (label, placeholder, type = "text", field = "", isSelect = false, options = []) => {
         const fieldKeys = field.split('.');
         let value = formik.values;
         for (const key of fieldKeys) value = value?.[key];
@@ -206,6 +259,7 @@ export default function TransporterPage() {
                     size="small"
                     name={field}
                     type={type}
+                    select={isSelect}
                     placeholder={placeholder}
                     variant="outlined"
                     value={value || ""}
@@ -227,7 +281,13 @@ export default function TransporterPage() {
                         },
                         '& .MuiFormHelperText-root': { ml: 1 }
                     }}
-                />
+                >
+                    {isSelect && options.map((opt) => (
+                        <MenuItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                        </MenuItem>
+                    ))}
+                </TextField>
             </Box>
         );
     };
@@ -239,20 +299,22 @@ export default function TransporterPage() {
                 <Typography variant="h3" sx={{ fontWeight: 900, color: palette.text.secondary }}>
                     Transporter
                 </Typography>
-                <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={handleOpenModal}
-                    sx={{
-                        background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
-                        textTransform: 'none',
-                        fontWeight: 600,
-                        height: '36px',
-                        borderRadius: '4px'
-                    }}
-                >
-                    New Transporter
-                </Button>
+                {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        onClick={handleOpenModal}
+                        sx={{
+                            background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                            textTransform: 'none',
+                            fontWeight: 600,
+                            height: '36px',
+                            borderRadius: '4px'
+                        }}
+                    >
+                        New Transporter
+                    </Button>
+                )}
             </Box>
 
             {/* Toolbar Section */}
@@ -345,24 +407,28 @@ export default function TransporterPage() {
                                                     <ViewIcon fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
-                                            <Tooltip title="Edit">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => handleEditTransporter(t)}
-                                                    sx={{ color: '#0057FF' }}
-                                                >
-                                                    <EditIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title="Delete">
-                                                <IconButton
-                                                    size="small"
-                                                    onClick={() => handleDeleteClick(t.id)}
-                                                    sx={{ color: '#EF4444' }}
-                                                >
-                                                    <DeleteIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
+                                            {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
+                                                <>
+                                                    <Tooltip title="Edit">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => handleEditTransporter(t)}
+                                                            sx={{ color: '#0057FF' }}
+                                                        >
+                                                            <EditIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                    <Tooltip title="Delete">
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => handleDeleteClick(t.id)}
+                                                            sx={{ color: '#EF4444' }}
+                                                        >
+                                                            <DeleteIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </>
+                                            )}
                                         </Box>
                                     </TableCell>
                                 </TableRow>
@@ -455,7 +521,36 @@ export default function TransporterPage() {
                                 <form onSubmit={formik.handleSubmit}>
                                     <Grid container spacing={4}>
                                         <Grid item xs={12} md={6}>
-                                            {renderField("Transporter Code", "Enter code (e.g. VRS)", "text", "icode")}
+                                            {currentUser?.role === "ADMIN" ? (
+                                                <>
+                                                    {renderField("Company *", "Select Company", "text", "companyId", true, allCompanies.map(c => ({ label: c.name, value: c.id })))}
+                                                    {formik.values.companyId && (
+                                                        <Box sx={{ mt: 1 }}>
+                                                            <TransporterBranchDropdown
+                                                                companyId={formik.values.companyId}
+                                                                value={formik.values.branchId}
+                                                                onChange={(val) => formik.setFieldValue("branchId", val)}
+                                                                renderField={renderField}
+                                                            />
+                                                        </Box>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {renderField("Company *", "Select Company", "text", "companyId", true, userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))}
+                                                    {formik.values.companyId && (
+                                                        <Box sx={{ mt: 1 }}>
+                                                            <TransporterBranchDropdown
+                                                                companyId={formik.values.companyId}
+                                                                value={formik.values.branchId}
+                                                                onChange={(val) => formik.setFieldValue("branchId", val)}
+                                                                renderField={renderField}
+                                                            />
+                                                        </Box>
+                                                    )}
+                                                </>
+                                            )}
+                                            {renderField("Transporter Code", "Code (Generated)", "text", "icode")}
                                             {renderField("Transporter Name", "Enter name", "text", "name")}
                                         </Grid>
                                         <Grid item xs={12} md={6}>

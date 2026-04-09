@@ -22,13 +22,11 @@ import { useFormik } from "formik";
 import * as Yup from "yup";
 import { aadhaarRegex, panRegex, phoneRegex, pincodeRegex, ifscRegex } from "@/utils/validationSchemas";
 import Cookies from "js-cookie";
+import { useApp } from "@/context/AppContext";
 
 export default function EmployeePage() {
+    const { user: globalUser, selectedCompany, selectedBranch } = useApp();
     const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
-    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
-    const associations = user.companies || [];
-    const defaultCompanyId = associations.length > 0 ? associations[0].companyId : "";
-    const defaultBranchId = associations.length > 0 ? associations[0].branchId : "";
 
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
@@ -87,9 +85,10 @@ export default function EmployeePage() {
     // Initial values for Formik
     const initialValues = {
         firstName: "", lastName: "", gender: "male", role: "", companyId: "", branchId: "",
+        companyIds: [],
         dateOfBirth: "", dateOfJoining: "", addressLine1: "", addressLine2: "", district: "", state: "",
         pincode: "", contactNumber: "", username: "", password: "",
-        salaryType: "", basicSalary: "", bankAccountHolderName: "", bankName: "",
+        salaryType: "MONTHLY", basicSalary: 0, bankAccountHolderName: "", bankName: "",
         bankAccountNumber: "", ifscCode: "", aadhaarNumber: "", panNumber: "", drivingLicenseNumber: ""
     };
 
@@ -99,8 +98,6 @@ export default function EmployeePage() {
         lastName: Yup.string().required("Last name is required"),
         gender: Yup.string().required("Gender is required"),
         role: Yup.string().required("Role is required"),
-        companyId: Yup.string().required("Company is required"),
-        branchId: Yup.string().required("Branch is required"),
         contactNumber: Yup.string()
             .matches(phoneRegex, "Phone must be 10-12 digits")
             .required("Contact number is required"),
@@ -118,9 +115,31 @@ export default function EmployeePage() {
         dateOfJoining: Yup.string().required("Date of Joining is required"),
 
         // Optional but validated if provided
-        salaryType: Yup.string().required("Salary type is required"),
-        basicSalary: Yup.number().typeError("Basic salary must be a number").required("Basic salary is required"),
-        bankAccountNumber: Yup.string().matches(/^[0-9]{9,18}$/, "Account number must be 9-18 digits"),
+        salaryType: Yup.string().when("role", {
+            is: (val) => val !== "PARTNER",
+            then: (schema) => schema.required("Salary type is required"),
+            otherwise: (schema) => schema.optional()
+        }),
+        basicSalary: Yup.number().typeError("Basic salary must be a number").when("role", {
+            is: (val) => val !== "PARTNER",
+            then: (schema) => schema.required("Basic salary is required"),
+            otherwise: (schema) => schema.optional()
+        }),
+        companyId: Yup.string().when("role", {
+            is: (val) => val !== "PARTNER",
+            then: (schema) => schema.required("Company is required"),
+            otherwise: (schema) => schema.optional()
+        }),
+        branchId: Yup.string().when("role", {
+            is: (val) => val !== "PARTNER",
+            then: (schema) => schema.required("Branch is required"),
+            otherwise: (schema) => schema.optional()
+        }),
+        companyIds: Yup.array().when("role", {
+            is: "PARTNER",
+            then: (schema) => schema.min(1, "Select at least one company"),
+            otherwise: (schema) => schema.optional()
+        }),
         ifscCode: Yup.string().matches(ifscRegex, "Invalid IFSC format"),
         aadhaarNumber: Yup.string().matches(aadhaarRegex, "Aadhar number must be 12 digits"),
         panNumber: Yup.string().matches(panRegex, "Invalid PAN format"),
@@ -154,7 +173,9 @@ export default function EmployeePage() {
 
     const fetchEmployees = async () => {
         try {
-            const response = await employeeApi.getAll(page, rowsPerPage, searchQuery);
+            const coId = selectedCompany?.companyId || selectedCompany?.id;
+            const brId = selectedBranch?.id;
+            const response = await employeeApi.getAll(page, rowsPerPage, searchQuery, coId, brId);
             if (response.success) {
                 setEmployees(response.data.content);
                 setTotalElements(response.data.totalElements);
@@ -174,7 +195,7 @@ export default function EmployeePage() {
             fetchEmployees();
         }, 300);
         return () => clearTimeout(timer);
-    }, [page, rowsPerPage, searchQuery]);
+    }, [page, rowsPerPage, searchQuery, selectedCompany, selectedBranch]);
 
     const formik = useFormik({
         initialValues,
@@ -291,6 +312,7 @@ export default function EmployeePage() {
             password: "",
             salaryType: employee.salaryType || "MONTHLY",
             basicSalary: employee.basicSalary || 0,
+            companyIds: employee.companyIds || (employee.companyId ? [employee.companyId] : []),
             bankAccountHolderName: employee.bankAccountHolderName || "",
             bankName: employee.bankName || "",
             bankAccountNumber: employee.bankAccountNumber || "",
@@ -374,7 +396,15 @@ export default function EmployeePage() {
 
         const errors = await formik.validateForm();
         if (activeStep === 0) {
-            const step1Fields = ['firstName', 'lastName', 'gender', 'role', 'companyId', 'branchId', 'contactNumber', 'addressLine1', 'district', 'state', 'pincode', 'dateOfBirth', 'dateOfJoining'];
+            const isPartner = formik.values.role === 'PARTNER';
+            const step1Fields = ['firstName', 'lastName', 'gender', 'role', 'contactNumber', 'addressLine1', 'district', 'state', 'pincode', 'dateOfBirth', 'dateOfJoining'];
+            
+            if (isPartner) {
+                step1Fields.push('companyIds');
+            } else {
+                step1Fields.push('companyId', 'branchId');
+            }
+            
             const touchedFields = step1Fields.reduce((acc, field) => ({ ...acc, [field]: true }), {});
             formik.setTouched(touchedFields);
             const step1Errors = step1Fields.filter(key => errors[key]);
@@ -388,22 +418,33 @@ export default function EmployeePage() {
         // If we are editing, allow navigation between steps freely
         if (isEditing) return true;
 
+        const isPartner = formik.values.role === 'PARTNER';
+        const values = formik.values;
+
         if (activeStep === 0) {
-            const requiredStep0 = ['firstName', 'lastName', 'gender', 'role', 'companyId', 'branchId', 'contactNumber', 'addressLine1', 'district', 'state', 'pincode', 'dateOfBirth', 'dateOfJoining'];
-            const errors = formik.errors;
-            return requiredStep0.every(field => !!formik.values[field]) && !requiredStep0.some(field => !!errors[field]);
+            const requiredStep0 = ['firstName', 'lastName', 'gender', 'role', 'contactNumber', 'addressLine1', 'district', 'state', 'pincode', 'dateOfBirth', 'dateOfJoining'];
+            if (isPartner) {
+                requiredStep0.push('companyIds');
+            } else {
+                requiredStep0.push('companyId', 'branchId');
+            }
+            
+            return requiredStep0.every(field => {
+                const val = values[field];
+                if (Array.isArray(val)) return val.length > 0;
+                return !!val;
+            });
         }
         if (activeStep === 1) {
+            if (isPartner) return true;
+            
             const requiredStep1Fields = ['salaryType', 'basicSalary'];
-            const errors = formik.errors;
             // Aadhaar and PAN are required documents
             const docsUploaded = (!!files.aadhaar || !!existingFiles.aadhaar) && (!!files.pan || !!existingFiles.pan);
-            return requiredStep1Fields.every(field => !!formik.values[field]) &&
-                !requiredStep1Fields.some(field => !!errors[field]) &&
-                docsUploaded;
+            return requiredStep1Fields.every(field => !!values[field]) && docsUploaded;
         }
         if (activeStep === 2) {
-            return !!formik.values.username && !!formik.values.password && !formik.errors.username && !formik.errors.password;
+            return !!values.username && !!values.password;
         }
         return true;
     };
@@ -486,6 +527,7 @@ export default function EmployeePage() {
         if (field === "role") options = filteredRoles.map(r => ({ label: r.name, value: r.name }));
         else if (field === "companyId") options = companies.map(c => ({ label: c.name, value: c.id }));
         else if (field === "branchId") options = availableBranches.map(b => ({ label: b.name, value: b.id }));
+        else if (field === "companyIds") options = companies.map(c => ({ label: c.name, value: c.id }));
         else if (field === "salaryType") options = [{ label: "Monthly", value: "MONTHLY" }, { label: "Daily", value: "DAILY" }, { label: "Hourly", value: "HOURLY" }];
 
         return (
@@ -673,11 +715,29 @@ export default function EmployeePage() {
                         <Box sx={{ width: itemWidth }}>{renderField("Last Name", "Enter the last name", false, "text", "lastName")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Gender", "", false, "radio", "gender")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Role", "Select role", true, "text", "role")}</Box>
-                        {(userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') && (
-                            <>
-                                <Box sx={{ width: itemWidth }}>{renderField("Company", "Select company", true, "text", "companyId")}</Box>
-                                <Box sx={{ width: itemWidth }}>{renderField("Branch", "Select branch", true, "text", "branchId")}</Box>
-                            </>
+                        {formik.values.role === 'PARTNER' ? (
+                            <Box sx={{ width: '100%' }}>
+                                <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Associated Companies</Typography>
+                                <Select
+                                    multiple
+                                    fullWidth size="small"
+                                    name="companyIds"
+                                    value={formik.values.companyIds}
+                                    onChange={formik.handleChange}
+                                    sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6', '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                                >
+                                    {companies.map((c) => (
+                                        <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                                    ))}
+                                </Select>
+                            </Box>
+                        ) : (
+                            (userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') && (
+                                <>
+                                    <Box sx={{ width: itemWidth }}>{renderField("Company", "Select company", true, "text", "companyId")}</Box>
+                                    <Box sx={{ width: itemWidth }}>{renderField("Branch", "Select branch", true, "text", "branchId")}</Box>
+                                </>
+                            )
                         )}
                         <Box sx={{ width: itemWidth }}>{renderField("Date of Birth", "yyyy-mm-dd", false, "date", "dateOfBirth")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Date of Joining", "yyyy-mm-dd", false, "date", "dateOfJoining")}</Box>
@@ -692,24 +752,28 @@ export default function EmployeePage() {
             case 1:
                 return (
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
-                        {/* Salary Details */}
-                        <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Salary Details</Typography></Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Salary Type", "Select salary type", true, "text", "salaryType")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Basic Salary", "Enter basic salary", false, "text", "basicSalary")}</Box>
+                        {formik.values.role !== 'PARTNER' && (
+                            <>
+                                {/* Salary Details */}
+                                <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Salary Details</Typography></Box>
+                                <Box sx={{ width: itemWidth }}>{renderField("Salary Type", "Select salary type", true, "text", "salaryType")}</Box>
+                                <Box sx={{ width: itemWidth }}>{renderField("Basic Salary", "Enter basic salary", false, "text", "basicSalary")}</Box>
 
-                        {/* Bank Details */}
-                        <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Bank Details</Typography></Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Account Holder Name", "Enter name", false, "text", "bankAccountHolderName")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Bank Name", "Enter bank name", false, "text", "bankName")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("Account Number", "Enter account number", false, "text", "bankAccountNumber")}</Box>
-                        <Box sx={{ width: itemWidth }}>{renderField("IFSC Code", "Enter IFSC code", false, "text", "ifscCode")}</Box>
+                                {/* Bank Details */}
+                                <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Bank Details</Typography></Box>
+                                <Box sx={{ width: itemWidth }}>{renderField("Account Holder Name", "Enter name", false, "text", "bankAccountHolderName")}</Box>
+                                <Box sx={{ width: itemWidth }}>{renderField("Bank Name", "Enter bank name", false, "text", "bankName")}</Box>
+                                <Box sx={{ width: itemWidth }}>{renderField("Account Number", "Enter account number", false, "text", "bankAccountNumber")}</Box>
+                                <Box sx={{ width: itemWidth }}>{renderField("IFSC Code", "Enter IFSC code", false, "text", "ifscCode")}</Box>
 
-                        {/* Upload Passbook */}
-                        <Box sx={{ width: itemWidth, mt: 1 }}>
-                            <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Upload Passbook</Typography>
-                            {renderUploadButton("Upload Passbook", "passbook")}
-                        </Box>
-                        <Box sx={{ width: itemWidth }}></Box>
+                                {/* Upload Passbook */}
+                                <Box sx={{ width: itemWidth, mt: 1 }}>
+                                    <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Upload Passbook</Typography>
+                                    {renderUploadButton("Upload Passbook", "passbook")}
+                                </Box>
+                                <Box sx={{ width: itemWidth }}></Box>
+                            </>
+                        )}
 
                         {/* Upload Documents */}
                         <Box sx={{ width: '100%', mt: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Upload Documents</Typography></Box>
@@ -748,20 +812,22 @@ export default function EmployeePage() {
                     Employee
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 2 }}>
-                    <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={handleOpenModal}
-                        sx={{
-                            background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
-                            textTransform: 'none',
-                            fontWeight: 600,
-                            height: '36px',
-                            borderRadius: '4px'
-                        }}
-                    >
-                        New Employee
-                    </Button>
+                    {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
+                        <Button
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={handleOpenModal}
+                            sx={{
+                                background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                                textTransform: 'none',
+                                fontWeight: 600,
+                                height: '36px',
+                                borderRadius: '4px'
+                            }}
+                        >
+                            New Employee
+                        </Button>
+                    )}
                 </Box>
             </Box>
 
@@ -861,24 +927,28 @@ export default function EmployeePage() {
                                                     <ViewIcon fontSize="small" />
                                                 </IconButton>
                                             </Tooltip>
-                                            <Tooltip title="Edit">
-                                                <IconButton
-                                                    size="small"
-                                                    sx={{ color: '#0057FF' }}
-                                                    onClick={() => handleEditEmployee(employee)}
-                                                >
-                                                    <EditIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
-                                            <Tooltip title="Delete">
-                                                <IconButton
-                                                    size="small"
-                                                    sx={{ color: '#EF4444' }}
-                                                    onClick={() => handleDeleteEmployee(employee.id)}
-                                                >
-                                                    <DeleteIcon fontSize="small" />
-                                                </IconButton>
-                                            </Tooltip>
+                                            {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
+                                                <>
+                                                    <Tooltip title="Edit">
+                                                        <IconButton
+                                                            size="small"
+                                                            sx={{ color: '#0057FF' }}
+                                                            onClick={() => handleEditEmployee(employee)}
+                                                        >
+                                                            <EditIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                    <Tooltip title="Delete">
+                                                        <IconButton
+                                                            size="small"
+                                                            sx={{ color: '#EF4444' }}
+                                                            onClick={() => handleDeleteEmployee(employee.id)}
+                                                        >
+                                                            <DeleteIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
+                                                </>
+                                            )}
                                         </Box>
                                     </TableCell>
                                 </TableRow>

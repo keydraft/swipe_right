@@ -6,6 +6,8 @@ import java.util.List;
 
 @Data
 public class CustomerRequest {
+    private java.util.UUID companyId;
+    private java.util.UUID branchId;
     private String name;
     private CustomerType type;
     private String phone;

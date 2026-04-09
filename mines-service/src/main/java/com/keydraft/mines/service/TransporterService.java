@@ -3,6 +3,8 @@ package com.keydraft.mines.service;
 import com.keydraft.mines.dto.*;
 import com.keydraft.mines.entity.Transporter;
 import com.keydraft.mines.entity.Address;
+import com.keydraft.mines.repository.BranchRepository;
+import com.keydraft.mines.repository.CompanyRepository;
 import com.keydraft.mines.repository.TransporterRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 public class TransporterService {
 
     private final TransporterRepository transporterRepository;
+    private final CompanyRepository companyRepository;
+    private final BranchRepository branchRepository;
 
     @Transactional
     public TransporterResponse upsertTransporter(UUID id, TransporterRequest request) {
@@ -32,12 +36,15 @@ public class TransporterService {
                     .orElseThrow(() -> new RuntimeException("Transporter not found"));
         } else {
             transporter = new Transporter();
-        }
-
-        if (request.getICode() != null && !request.getICode().isEmpty()) {
-            transporter.setICode(request.getICode());
-        } else if (transporter.getICode() == null || transporter.getICode().isEmpty()) {
-            transporter.setICode(generateTransporterCode());
+            if (request.getCompanyId() != null) {
+                transporter.setCompany(companyRepository.findById(request.getCompanyId())
+                        .orElseThrow(() -> new RuntimeException("Company not found")));
+            }
+            if (request.getBranchId() != null) {
+                transporter.setBranch(branchRepository.findById(request.getBranchId())
+                        .orElseThrow(() -> new RuntimeException("Branch not found")));
+            }
+            transporter.setICode(generateTransporterCode(request.getCompanyId(), request.getBranchId()));
         }
 
         transporter.setName(request.getName());
@@ -93,23 +100,23 @@ public class TransporterService {
         transporterRepository.deleteById(id);
     }
 
-    private String generateTransporterCode() {
-        String lastCode = transporterRepository.findTopByOrderByiCodeDesc()
-                .map(Transporter::getICode)
-                .filter(code -> code.startsWith("T"))
-                .orElse("T00000");
-
-        try {
-            int lastNum = Integer.parseInt(lastCode.substring(1));
-            String newCode = String.format("T%05d", lastNum + 1);
-            log.info("Generated Global Transporter Code: {}", newCode);
-            return newCode;
-        } catch (Exception e) {
-            long count = transporterRepository.count();
-            String fallback = String.format("T%05d", count + 1);
-            log.warn("Failed to parse last transporter code {}, using count fallback: {}", lastCode, fallback);
-            return fallback;
+    private String generateTransporterCode(UUID companyId, UUID branchId) {
+        if (companyId == null) {
+            return "T-" + UUID.randomUUID().toString().substring(0, 8);
         }
+        String prefix = "T";
+        String maxCode = transporterRepository.findMaxTransporterCodeByPrefix(prefix, companyId, branchId);
+
+        int nextId = 1;
+        if (maxCode != null) {
+            try {
+                String numericPart = maxCode.substring(prefix.length());
+                nextId = Integer.parseInt(numericPart) + 1;
+            } catch (Exception e) {
+                // fall back
+            }
+        }
+        return String.format("T%05d", nextId);
     }
 
     private TransporterResponse mapToResponse(Transporter t) {
@@ -126,6 +133,10 @@ public class TransporterService {
                         .state(t.getAddress().getState())
                         .pincode(t.getAddress().getPincode())
                         .build() : null)
+                .companyId(t.getCompany() != null ? t.getCompany().getId() : null)
+                .companyName(t.getCompany() != null ? t.getCompany().getName() : null)
+                .branchId(t.getBranch() != null ? t.getBranch().getId() : null)
+                .branchName(t.getBranch() != null ? t.getBranch().getName() : null)
                 .build();
     }
 }

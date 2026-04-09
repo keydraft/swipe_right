@@ -10,27 +10,23 @@ import { authApi } from "@/services/api";
 
 import Cookies from "js-cookie";
 import { ability, defineAbilitiesFor } from "@/utils/ability";
+import { useApp } from "@/context/AppContext";
 
 export default function DashboardLayout({ children }) {
     const router = useRouter();
+    const { user: globalUser, logout: appLogout, loading } = useApp();
     const [anchorEl, setAnchorEl] = useState(null);
-    const [user, setUser] = useState({ name: "Sivanesa", role: "SITE MANAGER" });
+    const [user, setUser] = useState({ name: "User", role: "SITE MANAGER" });
     const open = Boolean(anchorEl);
 
     useEffect(() => {
-        const storedUser = localStorage.getItem("user");
-        if (storedUser) {
-            try {
-                const userData = JSON.parse(storedUser);
-                setUser({
-                    name: userData.username || "User",
-                    role: userData.role || "SITE MANAGER"
-                });
-            } catch (e) {
-                console.error("Error parsing user data", e);
-            }
+        if (globalUser) {
+            setUser({
+                name: globalUser.firstName || globalUser.username || "User",
+                role: globalUser.roleName || globalUser.role || "SITE MANAGER"
+            });
         }
-    }, []);
+    }, [globalUser]);
 
     const handleClick = (event) => {
         setAnchorEl(event.currentTarget);
@@ -46,17 +42,9 @@ export default function DashboardLayout({ children }) {
         } catch (error) {
             console.error("Logout error:", error);
         } finally {
-            // 1. Clear local storage
-            localStorage.removeItem("user");
-            
-            // 2. Clear permissions and role cookies
-            Cookies.remove("permissions");
-            Cookies.remove("role");
-            
-            // 3. Reset CASL ability
+            // Reset local CASL ability (AppContext handleLogout will clear the rest)
             ability.update(defineAbilitiesFor([], '').rules);
-
-            router.push("/login");
+            appLogout();
         }
     };
 

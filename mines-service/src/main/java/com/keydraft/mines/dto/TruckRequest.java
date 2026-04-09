@@ -12,6 +12,8 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TruckRequest {
+    private UUID companyId;
+    private UUID branchId;
     private OwnershipType ownershipType;
     private String truckNo;
     private String registerName;

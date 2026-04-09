@@ -21,6 +21,14 @@ public class Transporter extends BaseEntity {
     @Column(nullable = false, unique = true)
     private String iCode;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "company_id")
+    private Company company;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "branch_id")
+    private Branch branch;
+
     @Column(nullable = false)
     private String name;
 

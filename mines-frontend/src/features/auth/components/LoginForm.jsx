@@ -21,11 +21,12 @@ import { palette } from "@/theme";
 import { authApi } from "@/services/api";
 import { useFormik } from "formik";
 import * as Yup from "yup";
-import Cookies from "js-cookie";
 import { ability, defineAbilitiesFor } from "@/utils/ability";
+import { useApp } from "@/context/AppContext";
 
 export default function LoginForm() {
     const router = useRouter();
+    const { login: appLogin } = useApp();
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [submitError, setSubmitError] = useState("");
@@ -49,17 +50,14 @@ export default function LoginForm() {
                 const response = await authApi.login(values.username, values.password);
                 if (response.success) {
                     const userData = response.data;
+                    const token = response.token; // Assuming backend returns token field
                     const permissions = userData.permissions || [];
-                    const role = userData.role || '';
+                    const role = userData.roleName || userData.role || '';
                     
-                    // 1. Store user data
-                    localStorage.setItem("user", JSON.stringify(userData));
+                    // Update global state through context
+                    appLogin(userData, token);
                     
-                    // 2. Store permissions and role in cookies
-                    Cookies.set("permissions", JSON.stringify(permissions), { expires: 1 });
-                    Cookies.set("role", role, { expires: 1 });
-                    
-                    // 3. Update CASL ability
+                    // Update CASL ability
                     ability.update(defineAbilitiesFor(permissions, role).rules);
 
                     if (userData.resetRequired) {

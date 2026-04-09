@@ -2,6 +2,8 @@ package com.keydraft.mines.service;
 
 import com.keydraft.mines.dto.*;
 import com.keydraft.mines.entity.*;
+import com.keydraft.mines.repository.BranchRepository;
+import com.keydraft.mines.repository.CompanyRepository;
 import com.keydraft.mines.repository.CustomerRepository;
 import com.keydraft.mines.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +23,8 @@ public class CustomerService {
 
     private final CustomerRepository customerRepository;
     private final ProductRepository productRepository;
+    private final CompanyRepository companyRepository;
+    private final BranchRepository branchRepository;
 
     @Transactional
     public CustomerResponse upsertCustomer(UUID id, CustomerRequest request) {
@@ -29,6 +33,15 @@ public class CustomerService {
             customer = customerRepository.findById(id).orElseThrow(() -> new RuntimeException("Customer not found"));
         } else {
             customer = new Customer();
+            if (request.getCompanyId() != null) {
+                customer.setCompany(companyRepository.findById(request.getCompanyId())
+                    .orElseThrow(() -> new RuntimeException("Company not found")));
+            }
+            if (request.getBranchId() != null) {
+                customer.setBranch(branchRepository.findById(request.getBranchId())
+                    .orElseThrow(() -> new RuntimeException("Branch not found")));
+            }
+            customer.setCustomerCode(generateCustomerCode(request.getType(), request.getCompanyId(), request.getBranchId()));
         }
 
         customer.setName(request.getName());
@@ -36,7 +49,8 @@ public class CustomerService {
         customer.setPhone(request.getPhone());
         customer.setEmail(request.getEmail());
         customer.setGstin(request.getGstin());
-        if (request.getActive() != null) customer.setActive(request.getActive());
+        if (request.getActive() != null)
+            customer.setActive(request.getActive());
 
         if (request.getAddress() != null) {
             customer.setAddress(Address.builder()
@@ -83,7 +97,8 @@ public class CustomerService {
                 if (siteReq.getPrices() != null) {
                     for (CustomerPriceRequest priceReq : siteReq.getPrices()) {
                         Product product = productRepository.findById(priceReq.getProductId())
-                                .orElseThrow(() -> new RuntimeException("Product not found: " + priceReq.getProductId()));
+                                .orElseThrow(
+                                        () -> new RuntimeException("Product not found: " + priceReq.getProductId()));
                         site.getPrices().add(mapToEntity(priceReq, product, customer, site));
                     }
                 }
@@ -114,17 +129,29 @@ public class CustomerService {
         return customerRepository.findAll().stream().map(this::mapToResponse).collect(Collectors.toList());
     }
 
-    public PaginatedResponse<CustomerResponse> getAllCustomers(String search, Pageable pageable) {
+    public PaginatedResponse<CustomerResponse> getAllCustomers(String search, UUID companyId, UUID branchId, Pageable pageable) {
         Specification<Customer> spec = (root, query, cb) -> {
-            if (search == null || search.isEmpty()) {
-                return cb.conjunction();
-            }
-            String pattern = "%" + search.toLowerCase() + "%";
-            return cb.or(
-                    cb.like(cb.lower(root.get("name")), pattern),
-                    cb.like(cb.lower(root.get("phone")), pattern),
-                    cb.like(cb.lower(root.get("email")), pattern)
-            );
+            Specification<Customer> searchSpec = (rootS, queryS, cbS) -> {
+                if (search == null || search.isEmpty()) return cbS.conjunction();
+                String pattern = "%" + search.toLowerCase() + "%";
+                return cbS.or(
+                        cbS.like(cbS.lower(rootS.get("name")), pattern),
+                        cbS.like(cbS.lower(rootS.get("phone")), pattern),
+                        cbS.like(cbS.lower(rootS.get("email")), pattern));
+            };
+            
+            Specification<Customer> orgSpec = (rootO, queryO, cbO) -> {
+                if (companyId == null) return cbO.conjunction();
+                if (branchId != null) {
+                    return cbO.and(
+                            cbO.equal(rootO.get("company").get("id"), companyId),
+                            cbO.equal(rootO.get("branch").get("id"), branchId)
+                    );
+                }
+                return cbO.equal(rootO.get("company").get("id"), companyId);
+            };
+
+            return cb.and(searchSpec.toPredicate(root, query, cb), orgSpec.toPredicate(root, query, cb));
         };
 
         Page<Customer> page = customerRepository.findAll(spec, pageable);
@@ -149,6 +176,7 @@ public class CustomerService {
     private CustomerResponse mapToResponse(Customer c) {
         return CustomerResponse.builder()
                 .id(c.getId())
+                .customerCode(c.getCustomerCode())
                 .name(c.getName())
                 .type(c.getType())
                 .phone(c.getPhone())
@@ -178,6 +206,10 @@ public class CustomerService {
                                 .build() : null)
                         .prices(s.getPrices().stream().map(this::mapPriceToResponse).collect(Collectors.toList()))
                         .build()).collect(Collectors.toList()))
+                .companyId(c.getCompany() != null ? c.getCompany().getId() : null)
+                .companyName(c.getCompany() != null ? c.getCompany().getName() : null)
+                .branchId(c.getBranch() != null ? c.getBranch().getId() : null)
+                .branchName(c.getBranch() != null ? c.getBranch().getName() : null)
                 .build();
     }
 
@@ -194,5 +226,26 @@ public class CustomerService {
                 .tonnageLimit(p.getTonnageLimit())
                 .gstInclusive(p.getGstInclusive())
                 .build();
+    }
+    private String generateCustomerCode(com.keydraft.mines.entity.enums.CustomerType type, UUID companyId, UUID branchId) {
+        if (companyId == null) {
+            // Should not happen normally if multi-tenant, but for safety:
+            return "TEMP-" + UUID.randomUUID().toString().substring(0, 8);
+        }
+        
+        String prefix = (type == com.keydraft.mines.entity.enums.CustomerType.CORPORATE) ? "CRED-" : "LOC-";
+        String maxCode = customerRepository.findMaxCustomerCodeByPrefix(prefix, companyId, branchId);
+
+        int nextId = 1;
+        if (maxCode != null) {
+            try {
+                String numericPart = maxCode.substring(prefix.length());
+                nextId = Integer.parseInt(numericPart) + 1;
+            } catch (Exception e) {
+                // fall back to 1 if something is wrong with format
+            }
+        }
+
+        return prefix + String.format("%04d", nextId);
     }
 }

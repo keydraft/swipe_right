@@ -5,6 +5,8 @@ import lombok.Data;
 
 @Data
 public class TransporterRequest {
+    private java.util.UUID companyId;
+    private java.util.UUID branchId;
     @JsonProperty("iCode")
     private String iCode;
     private String name;

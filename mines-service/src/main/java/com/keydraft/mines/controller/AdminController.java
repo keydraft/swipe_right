@@ -86,4 +86,10 @@ public class AdminController {
         List<RoleResponse> response = adminService.seedDefaultRoles();
         return ResponseEntity.ok(ApiResponse.success(response, "System roles seeded successfully"));
     }
+
+    @GetMapping("/companies/{companyId}/branches")
+    public ResponseEntity<ApiResponse<List<BranchResponse>>> getBranches(@PathVariable java.util.UUID companyId) {
+        List<BranchResponse> response = adminService.getBranchesByCompany(companyId);
+        return ResponseEntity.ok(ApiResponse.success(response, "Branches fetched successfully"));
+    }
 }

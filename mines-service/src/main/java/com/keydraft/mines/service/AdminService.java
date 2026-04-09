@@ -384,4 +384,9 @@ public class AdminService {
         }
         return res;
     }
+
+    public List<BranchResponse> getBranchesByCompany(java.util.UUID companyId) {
+        Company company = companyRepository.findById(companyId).orElseThrow(() -> new RuntimeException("No Company"));
+        return company.getBranches().stream().map(this::mapBranchResponse).collect(Collectors.toList());
+    }
 }

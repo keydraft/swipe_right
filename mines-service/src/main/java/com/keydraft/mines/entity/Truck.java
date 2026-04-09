@@ -20,6 +20,17 @@ public class Truck extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "truck_code", unique = true)
+    private String truckCode;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "company_id")
+    private Company company;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "branch_id")
+    private Branch branch;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OwnershipType ownershipType;

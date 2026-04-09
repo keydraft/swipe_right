@@ -17,14 +17,36 @@ import {
     ArrowBackIos as BackIcon, ArrowForwardIos as NextIcon, CheckCircleOutlined as SaveIcon
 } from "@mui/icons-material";
 import { palette } from "@/theme";
-import { customerApi, productApi } from "@/services/api";
+import { customerApi, productApi, adminApi } from "@/services/api";
 import { useFormik, FormikProvider } from "formik";
 import * as Yup from "yup";
 import { phoneRegex, pincodeRegex, gstinRegex } from "@/utils/validationSchemas";
+import Cookies from "js-cookie";
 
 const steps = ['Registry Information', 'Pricing & Sites'];
 
+// ─── Branch Dropdown Component ────────────────────────────
+function CustomerBranchDropdown({ companyId, value, onChange, renderField }) {
+    const [branches, setBranches] = React.useState([]);
+
+    React.useEffect(() => {
+        if (!companyId) { setBranches([]); return; }
+        adminApi.getBranches(companyId).then(res => {
+            if (res.success) {
+                const list = res.data || [];
+                setBranches(list);
+                if (!value && list.length > 0) onChange(list[0].id);
+            }
+        }).catch(() => setBranches([]));
+    }, [companyId]);
+
+    return renderField("Branch *", "Select Branch", "branchId", "text", true,
+        branches.map(b => ({ label: b.name, value: b.id }))
+    );
+}
+
 export default function CustomerPage() {
+    const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
     const [activeStep, setActiveStep] = useState(0);
@@ -53,6 +75,8 @@ export default function CustomerPage() {
     const [deleteTargetId, setDeleteTargetId] = useState(null);
 
     const initialValues = {
+        companyId: "",
+        branchId: "",
         name: "",
         type: "LOCAL",
         phone: "",
@@ -63,6 +87,10 @@ export default function CustomerPage() {
         prices: [], // For Local
         sites: []  // For Corporate
     };
+
+    const [userCompanyInfo, setUserCompanyInfo] = useState([]);
+    const [allCompanies, setAllCompanies] = useState([]);
+    const [currentUser, setCurrentUser] = useState(null);
 
     const validationSchema = Yup.object({
         name: Yup.string().required("Customer name is required"),
@@ -109,6 +137,30 @@ export default function CustomerPage() {
     };
 
     useEffect(() => {
+        const storedUser = localStorage.getItem("user");
+        if (storedUser) {
+            try {
+                const userData = JSON.parse(storedUser);
+                setCurrentUser(userData);
+                if (userData.role === "ADMIN") {
+                    // Fetch all companies for admin
+                    adminApi.getCompanies(0, 1000).then(resp => {
+                        if (resp.success) {
+                            setAllCompanies(resp.data.content);
+                        }
+                    });
+                } else if (userData.companies) {
+                    setUserCompanyInfo(userData.companies);
+                    // Default to first company/branch if valid
+                    if (userData.companies.length > 0) {
+                        formik.setFieldValue("companyId", userData.companies[0].companyId);
+                        formik.setFieldValue("branchId", userData.companies[0].branchId || "");
+                    }
+                }
+            } catch (e) {
+                console.error("Error parsing user data for company info", e);
+            }
+        }
         fetchInitialData();
     }, []);
 
@@ -165,6 +217,8 @@ export default function CustomerPage() {
         setEditingId(customer.id);
         setActiveStep(0);
         formik.setValues({
+            companyId: customer.companyId || (userCompanyInfo.length > 0 ? userCompanyInfo[0].companyId : ""),
+            branchId: customer.branchId || (userCompanyInfo.length > 0 ? userCompanyInfo[0].branchId : ""),
             name: customer.name || "",
             type: customer.type || "LOCAL",
             phone: customer.phone || "",
@@ -215,7 +269,7 @@ export default function CustomerPage() {
         const fieldKeys = field.split('.');
         let value = formik.values;
         for (const key of fieldKeys) value = value?.[key];
-        
+
         const getFieldMeta = (name) => {
             const keys = name.split('.');
             let meta = { touched: formik.touched, error: formik.errors };
@@ -262,11 +316,11 @@ export default function CustomerPage() {
                         onBlur={formik.handleBlur}
                         error={hasError}
                         helperText={hasError ? meta.error : ""}
-                        sx={{ 
-                            '& .MuiOutlinedInput-root': { 
-                                borderRadius: '12px', 
-                                backgroundColor: '#F9FAFB', 
-                                '& .MuiOutlinedInput-notchedOutline': { border: hasError ? '1px solid #d32f2f' : '1px solid #F3F4F6' } 
+                        sx={{
+                            '& .MuiOutlinedInput-root': {
+                                borderRadius: '12px',
+                                backgroundColor: '#F9FAFB',
+                                '& .MuiOutlinedInput-notchedOutline': { border: hasError ? '1px solid #d32f2f' : '1px solid #F3F4F6' }
                             },
                             '& .MuiFormHelperText-root': { ml: 1 }
                         }}
@@ -285,7 +339,7 @@ export default function CustomerPage() {
         formik.setFieldValue("sites", [...formik.values.sites, newSite]);
     };
 
-    const handleAddPrice = (targetField) => { 
+    const handleAddPrice = (targetField) => {
         const newPrice = { productId: "", rate: 0, cashRate: 0, creditRate: 0, transportRate: 0, uom: "TONS", tonnageLimit: 0, gstInclusive: false };
         if (targetField === 'prices') {
             formik.setFieldValue("prices", [...formik.values.prices, newPrice]);
@@ -367,20 +421,22 @@ export default function CustomerPage() {
                 {/* Header Section */}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                     <Typography variant="h3" sx={{ fontWeight: 900, color: palette.text.secondary }}>Customer</Typography>
-                    <Button
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        onClick={handleOpenModal}
-                        sx={{
-                            background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
-                            textTransform: 'none',
-                            fontWeight: 600,
-                            height: '36px',
-                            borderRadius: '4px'
-                        }}
-                    >
-                        New Customer
-                    </Button>
+                    {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
+                        <Button
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={handleOpenModal}
+                            sx={{
+                                background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                                textTransform: 'none',
+                                fontWeight: 600,
+                                height: '36px',
+                                borderRadius: '4px'
+                            }}
+                        >
+                            New Customer
+                        </Button>
+                    )}
                 </Box>
 
                 {/* Toolbar Section */}
@@ -433,6 +489,7 @@ export default function CustomerPage() {
                         <Table sx={{ minWidth: 1000 }}>
                             <TableHead sx={{ backgroundColor: palette.background.paper }}>
                                 <TableRow>
+                                    <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Code</TableCell>
                                     <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Name</TableCell>
                                     <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Type</TableCell>
                                     <TableCell sx={{ fontWeight: 600, color: palette.text.primary }}>Phone</TableCell>
@@ -442,11 +499,12 @@ export default function CustomerPage() {
                             </TableHead>
                             <TableBody>
                                 {isLoading ? (
-                                    <TableRow><TableCell colSpan={5} align="center" sx={{ py: 3 }}><CircularProgress size={24} /></TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}><CircularProgress size={24} /></TableCell></TableRow>
                                 ) : customers.length === 0 ? (
-                                    <TableRow><TableCell colSpan={5} align="center" sx={{ py: 3 }}><Typography color="textSecondary">No customers found</Typography></TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}><Typography color="textSecondary">No customers found</Typography></TableCell></TableRow>
                                 ) : customers.map((c) => (
                                     <TableRow key={c.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
+                                        <TableCell sx={{ fontWeight: 700, color: '#0057FF' }}>{c.customerCode || 'N/A'}</TableCell>
                                         <TableCell sx={{ fontWeight: 600 }}>{c.name}</TableCell>
                                         <TableCell>
                                             <Box sx={{ px: 1.5, py: 0.5, borderRadius: '12px', fontSize: '11px', fontWeight: 800, display: 'inline-block', bgcolor: c.type === 'CORPORATE' ? '#EBF5FF' : '#F0FDF4', color: c.type === 'CORPORATE' ? '#0057FF' : '#16A34A' }}>
@@ -460,8 +518,12 @@ export default function CustomerPage() {
                                                 <Tooltip title="View">
                                                     <IconButton onClick={() => handleViewCustomer(c)} sx={{ color: palette.primary.main }} size="small"><ViewIcon fontSize="small" /></IconButton>
                                                 </Tooltip>
-                                                <IconButton onClick={() => handleEditCustomer(c)} sx={{ color: '#0057FF' }} size="small"><EditIcon fontSize="small" /></IconButton>
-                                                <IconButton onClick={() => handleDeleteClick(c.id)} sx={{ color: '#EF4444' }} size="small"><DeleteIcon fontSize="small" /></IconButton>
+                                                {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
+                                                    <>
+                                                        <IconButton onClick={() => handleEditCustomer(c)} sx={{ color: '#0057FF' }} size="small"><EditIcon fontSize="small" /></IconButton>
+                                                        <IconButton onClick={() => handleDeleteClick(c.id)} sx={{ color: '#EF4444' }} size="small"><DeleteIcon fontSize="small" /></IconButton>
+                                                    </>
+                                                )}
                                             </Box>
                                         </TableCell>
                                     </TableRow>
@@ -489,11 +551,11 @@ export default function CustomerPage() {
                 </Card>
 
                 {/* Modal Section */}
-                <Dialog 
-                    open={openModal} 
-                    onClose={handleCloseModal} 
-                    maxWidth="md" 
-                    fullWidth 
+                <Dialog
+                    open={openModal}
+                    onClose={handleCloseModal}
+                    maxWidth="md"
+                    fullWidth
                     sx={{
                         '& .MuiDialog-container': {
                             alignItems: 'center',
@@ -543,8 +605,37 @@ export default function CustomerPage() {
 
                                     <Box sx={{ minHeight: '400px', mt: 4 }}>
                                         {activeStep === 0 ? (
-                                            <Grid container spacing={3}>
+                                            <Grid container spacing={4}>
                                                 <Grid item xs={12} md={6}>
+                                                {currentUser?.role === "ADMIN" ? (
+                                                        <>
+                                                            {renderField("Company *", "Select Company", "companyId", "text", true, allCompanies.map(c => ({ label: c.name, value: c.id })))}
+                                                            {formik.values.companyId && (
+                                                                <Box sx={{ mt: 1 }}>
+                                                                    <CustomerBranchDropdown
+                                                                        companyId={formik.values.companyId}
+                                                                        value={formik.values.branchId}
+                                                                        onChange={(val) => formik.setFieldValue("branchId", val)}
+                                                                        renderField={renderField}
+                                                                    />
+                                                                </Box>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            {renderField("Company *", "Select Company", "companyId", "text", true, userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))}
+                                                            {formik.values.companyId && (
+                                                                <Box sx={{ mt: 1 }}>
+                                                                    <CustomerBranchDropdown
+                                                                        companyId={formik.values.companyId}
+                                                                        value={formik.values.branchId}
+                                                                        onChange={(val) => formik.setFieldValue("branchId", val)}
+                                                                        renderField={renderField}
+                                                                    />
+                                                                </Box>
+                                                            )}
+                                                        </>
+                                                    )}
                                                     {renderField("Customer Full Name", "Enter name", "name")}
                                                     {renderField("Customer Type *", "Select type", "type", "text", true, [{ label: "LOCAL", value: "LOCAL" }, { label: "CORPORATE", value: "CORPORATE" }])}
                                                     {renderField("Primary Phone", "Enter phone", "phone")}
@@ -672,8 +763,8 @@ export default function CustomerPage() {
                 </Dialog>
 
                 {/* View Customer Details Modal */}
-                <Dialog 
-                    open={viewModalOpen} 
+                <Dialog
+                    open={viewModalOpen}
                     onClose={() => setViewModalOpen(false)}
                     maxWidth="md"
                     fullWidth
@@ -708,8 +799,8 @@ export default function CustomerPage() {
                                             Type: {selectedCustomer.type} | Phone: {selectedCustomer.phone}
                                         </Typography>
                                     </Box>
-                                    <Box sx={{ 
-                                        px: 2, py: 1, borderRadius: '12px', 
+                                    <Box sx={{
+                                        px: 2, py: 1, borderRadius: '12px',
                                         backgroundColor: selectedCustomer.active ? '#EBFDF5' : '#FEF2F2',
                                         color: selectedCustomer.active ? '#10B981' : '#EF4444',
                                         fontWeight: 700, fontSize: '13px'
@@ -725,6 +816,7 @@ export default function CustomerPage() {
                                             Basic Information
                                         </Typography>
                                         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
+                                            <DetailItem label="Customer Code" value={selectedCustomer.customerCode || "N/A"} />
                                             <DetailItem label="Full Name" value={selectedCustomer.name} />
                                             <DetailItem label="Customer Type" value={selectedCustomer.type} />
                                             <DetailItem label="Phone Number" value={selectedCustomer.phone} />
@@ -823,8 +915,8 @@ export default function CustomerPage() {
                                     <Button
                                         onClick={() => setViewModalOpen(false)}
                                         variant="contained"
-                                        sx={{ 
-                                            borderRadius: '12px', px: 6, py: 1.2, 
+                                        sx={{
+                                            borderRadius: '12px', px: 6, py: 1.2,
                                             textTransform: 'none', fontWeight: 700,
                                             backgroundColor: '#111827',
                                             '&:hover': { backgroundColor: '#000' }
@@ -839,9 +931,9 @@ export default function CustomerPage() {
                 </Dialog>
 
                 {/* Notification Snackbar */}
-                <Snackbar 
-                    open={snackbar.open} 
-                    autoHideDuration={6000} 
+                <Snackbar
+                    open={snackbar.open}
+                    autoHideDuration={6000}
                     onClose={handleCloseSnackbar}
                     anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                 >
@@ -851,8 +943,8 @@ export default function CustomerPage() {
                 </Snackbar>
 
                 {/* Delete Confirmation Dialog */}
-                <Dialog 
-                    open={deleteConfirmOpen} 
+                <Dialog
+                    open={deleteConfirmOpen}
                     onClose={() => setDeleteConfirmOpen(false)}
                     sx={{
                         '& .MuiDialog-container': { alignItems: 'center', justifyContent: 'center', marginLeft: { md: '280px' }, width: { md: 'calc(100% - 280px)' } },
