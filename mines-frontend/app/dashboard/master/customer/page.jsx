@@ -267,16 +267,14 @@ export default function CustomerPage() {
 
     const renderField = (label, placeholder, field, type = "text", isSelect = false, options = []) => {
         const fieldKeys = field.split('.');
-        let value = formik.values;
-        for (const key of fieldKeys) value = value?.[key];
-
         const getFieldMeta = (name) => {
             const keys = name.split('.');
-            let meta = { touched: formik.touched, error: formik.errors };
+            let meta = { touched: formik.touched, error: formik.errors, value: formik.values };
             for (const key of keys) {
                 meta = {
                     touched: meta.touched?.[key],
-                    error: meta.error?.[key]
+                    error: meta.error?.[key],
+                    value: meta.value?.[key]
                 };
             }
             return meta;
@@ -286,24 +284,37 @@ export default function CustomerPage() {
         const hasError = !!(meta.touched && meta.error);
 
         return (
-            <Box sx={{ width: '100%', mb: 2 }}>
+            <Box sx={{ width: '100%', mb: 1.5 }}>
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
                 {isSelect ? (
                     <Box>
                         <Select
                             fullWidth size="small"
                             name={field}
-                            value={value || ""}
-                            onChange={formik.handleChange}
+                            value={meta.value || ""}
+                            onChange={(e) => {
+                                formik.handleChange(e);
+                                if (field === "companyId") {
+                                    formik.setFieldValue("branchId", "");
+                                }
+                            }}
                             onBlur={formik.handleBlur}
                             displayEmpty
                             error={hasError}
-                            sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: hasError ? '1px solid #d32f2f' : '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
+                            variant="outlined"
+                            sx={{
+                                borderRadius: '12px',
+                                backgroundColor: '#F8FAFC',
+                                '& .MuiOutlinedInput-notchedOutline': { borderColor: hasError ? '#d32f2f' : '#E5E7EB' },
+                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: hasError ? '#d32f2f' : '#CBD5E1' },
+                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: hasError ? '#d32f2f' : '#0057FF', borderWidth: '1.5px' },
+                                '& .MuiSelect-select': { color: meta.value ? '#111827' : '#9CA3AF' }
+                            }}
                         >
                             <MenuItem value="">{placeholder}</MenuItem>
                             {options.map((opt, i) => <MenuItem key={i} value={opt.value}>{opt.label}</MenuItem>)}
                         </Select>
-                        {hasError && <Typography sx={{ color: '#d32f2f', fontSize: '11px', mt: 0.5, ml: 1 }}>{meta.error}</Typography>}
+                        {hasError && <Typography sx={{ color: '#d32f2f', fontSize: '11px', mt: 0.5, ml: 1, fontWeight: 500 }}>{meta.error}</Typography>}
                     </Box>
                 ) : (
                     <TextField
@@ -311,18 +322,27 @@ export default function CustomerPage() {
                         name={field}
                         type={type}
                         placeholder={placeholder}
-                        value={value || ""}
-                        onChange={formik.handleChange}
+                        variant="outlined"
+                        value={meta.value || ""}
+                        onChange={(e) => {
+                            if (field === "gstin") {
+                                formik.setFieldValue(field, e.target.value.toUpperCase());
+                            } else {
+                                formik.handleChange(e);
+                            }
+                        }}
                         onBlur={formik.handleBlur}
                         error={hasError}
                         helperText={hasError ? meta.error : ""}
+                        FormHelperTextProps={{ sx: { ml: 0.5, mt: 0.5, fontSize: '11px', fontWeight: 500 } }}
                         sx={{
                             '& .MuiOutlinedInput-root': {
                                 borderRadius: '12px',
-                                backgroundColor: '#F9FAFB',
-                                '& .MuiOutlinedInput-notchedOutline': { border: hasError ? '1px solid #d32f2f' : '1px solid #F3F4F6' }
-                            },
-                            '& .MuiFormHelperText-root': { ml: 1 }
+                                backgroundColor: '#F8FAFC',
+                                '& fieldset': { borderColor: hasError ? '#d32f2f' : '#E5E7EB' },
+                                '&:hover fieldset': { borderColor: hasError ? '#d32f2f' : '#CBD5E1' },
+                                '&.Mui-focused fieldset': { borderColor: hasError ? '#d32f2f' : '#0057FF', borderWidth: '1.5px' }
+                            }
                         }}
                     />
                 )}
@@ -605,53 +625,41 @@ export default function CustomerPage() {
 
                                     <Box sx={{ minHeight: '400px', mt: 4 }}>
                                         {activeStep === 0 ? (
-                                            <Grid container spacing={4}>
-                                                <Grid item xs={12} md={6}>
-                                                {currentUser?.role === "ADMIN" ? (
-                                                        <>
-                                                            {renderField("Company *", "Select Company", "companyId", "text", true, allCompanies.map(c => ({ label: c.name, value: c.id })))}
-                                                            {formik.values.companyId && (
-                                                                <Box sx={{ mt: 1 }}>
-                                                                    <CustomerBranchDropdown
-                                                                        companyId={formik.values.companyId}
-                                                                        value={formik.values.branchId}
-                                                                        onChange={(val) => formik.setFieldValue("branchId", val)}
-                                                                        renderField={renderField}
-                                                                    />
-                                                                </Box>
-                                                            )}
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            {renderField("Company *", "Select Company", "companyId", "text", true, userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))}
-                                                            {formik.values.companyId && (
-                                                                <Box sx={{ mt: 1 }}>
-                                                                    <CustomerBranchDropdown
-                                                                        companyId={formik.values.companyId}
-                                                                        value={formik.values.branchId}
-                                                                        onChange={(val) => formik.setFieldValue("branchId", val)}
-                                                                        renderField={renderField}
-                                                                    />
-                                                                </Box>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                    {renderField("Customer Full Name", "Enter name", "name")}
-                                                    {renderField("Customer Type *", "Select type", "type", "text", true, [{ label: "LOCAL", value: "LOCAL" }, { label: "CORPORATE", value: "CORPORATE" }])}
-                                                    {renderField("Primary Phone", "Enter phone", "phone")}
-                                                    {renderField("Email Address", "Enter email", "email")}
-                                                    {renderField("GSTIN Number", "Enter GSTIN", "gstin")}
-                                                </Grid>
-                                                <Grid item xs={12} md={6}>
-                                                    {renderField("Address Line 1", "Enter address", "address.addressLine1")}
-                                                    {renderField("Address Line 2", "Enter address", "address.addressLine2")}
-                                                    <Stack direction="row" spacing={2}>
-                                                        <Box sx={{ flex: 1 }}>{renderField("District", "Enter district", "address.district")}</Box>
-                                                        <Box sx={{ flex: 1 }}>{renderField("State", "Enter state", "address.state")}</Box>
-                                                    </Stack>
-                                                    {renderField("Pincode", "Enter pincode", "address.pincode")}
-                                                </Grid>
-                                            </Grid>
+                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: "10px 20px" }}>
+                                                {/* Entity Assignment */}
+                                                <Box sx={{ width: '100%', mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Entity Assignment</Typography></Box>
+                                                
+                                                <Box sx={{ width: 'calc(50% - 10px)' }}>
+                                                    {currentUser?.role === "ADMIN" 
+                                                        ? renderField("Company *", "Select Company", "companyId", "text", true, allCompanies.map(c => ({ label: c.name, value: c.id })))
+                                                        : renderField("Company *", "Select Company", "companyId", "text", true, userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))
+                                                    }
+                                                </Box>
+                                                <Box sx={{ width: 'calc(50% - 10px)' }}>
+                                                    <CustomerBranchDropdown
+                                                        companyId={formik.values.companyId}
+                                                        value={formik.values.branchId}
+                                                        onChange={(val) => formik.setFieldValue("branchId", val)}
+                                                        renderField={renderField}
+                                                    />
+                                                </Box>
+
+                                                {/* General Information */}
+                                                <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>General Information</Typography></Box>
+                                                <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Customer Name *", "Enter full name", "name")}</Box>
+                                                <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Customer Type *", "Select type", "type", "text", true, [{ label: "LOCAL", value: "LOCAL" }, { label: "CORPORATE", value: "CORPORATE" }])}</Box>
+                                                <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Primary Phone *", "Enter phone number", "phone")}</Box>
+                                                <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Email Address", "Enter email address", "email")}</Box>
+                                                <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("GSTIN Number", "Enter GSTIN", "gstin")}</Box>
+
+                                                {/* Address Details */}
+                                                <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Address Details</Typography></Box>
+                                                <Box sx={{ width: '100%' }}>{renderField("Address Line 1 *", "Room/Building/Street", "address.addressLine1")}</Box>
+                                                <Box sx={{ width: '100%' }}>{renderField("Address Line 2", "Area/Landmark (optional)", "address.addressLine2")}</Box>
+                                                <Box sx={{ width: 'calc(33.33% - 13.33px)' }}>{renderField("District *", "City/District", "address.district")}</Box>
+                                                <Box sx={{ width: 'calc(33.33% - 13.33px)' }}>{renderField("State *", "Select state", "address.state")}</Box>
+                                                <Box sx={{ width: 'calc(33.33% - 13.33px)' }}>{renderField("Pincode *", "6-digit code", "address.pincode")}</Box>
+                                            </Box>
                                         ) : (
                                             <Box>
                                                 {formik.values.type === 'CORPORATE' ? (
