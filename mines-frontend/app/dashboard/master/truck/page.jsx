@@ -538,14 +538,12 @@ export default function TruckPage() {
                         }
                     </Box>
                     <Box sx={{ width: itemWidth }}>
-                        {formik.values.companyId && (
-                            <BranchDropdown
-                                companyId={formik.values.companyId}
-                                value={formik.values.branchId}
-                                onChange={(val) => formik.setFieldValue("branchId", val)}
-                                renderField={renderField}
-                            />
-                        )}
+                        <BranchDropdown
+                            companyId={formik.values.companyId}
+                            value={formik.values.branchId}
+                            onChange={(val) => formik.setFieldValue("branchId", val)}
+                            renderField={renderField}
+                        />
                     </Box>
 
                     <Box sx={{ width: itemWidth }}>{renderField("Truck Number *", "Enter truck number (e.g. MH12AB1234)", false, "text", "truckNo")}</Box>

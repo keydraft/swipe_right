@@ -4,12 +4,15 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import lombok.*;
+import java.util.UUID;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class BranchRequest {
+
+    private UUID id;
 
     @NotBlank(message = "Site type is required (PRODUCTION or OFFICE)")
     private String siteType;

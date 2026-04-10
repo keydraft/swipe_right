@@ -17,6 +17,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -152,43 +155,90 @@ public class AdminService {
         company.setGstin(request.getGstin());
         company.setInvoiceInitial(request.getInvoiceInitial());
 
-        company = companyRepository.save(company);
-
-        // Map Bank Accounts
+        // Manage Bank Accounts
         if (request.getBankAccounts() != null) {
-            company.getBankAccounts().clear();
+            Set<UUID> incomingIds = request.getBankAccounts().stream()
+                    .map(BankAccountRequest::getId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+            
+            System.out.println("Processing Bank Accounts. Incoming IDs: " + incomingIds);
+            System.out.println("Existing Bank Account IDs: " + company.getBankAccounts().stream().map(BankAccount::getId).collect(Collectors.toList()));
+
+            company.getBankAccounts().removeIf(ba -> ba.getId() != null && !incomingIds.contains(ba.getId()));
+
             for (BankAccountRequest br : request.getBankAccounts()) {
-                BankAccount bank = BankAccount.builder()
-                        .accountName(br.getAccountName())
-                        .shortName(br.getShortName())
-                        .accountNumber(br.getAccountNumber())
-                        .bankName(br.getBankName())
-                        .branchName(br.getBranchName())
-                        .ifscCode(br.getIfscCode())
-                        .openingBalance(br.getOpeningBalance())
-                        .openingDate(br.getOpeningDate())
-                        .company(company)
-                        .build();
-                company.getBankAccounts().add(bank);
+                if (br.getId() != null) {
+                    BankAccount existing = company.getBankAccounts().stream()
+                            .filter(ba -> ba.getId().equals(br.getId()))
+                            .findFirst()
+                            .orElseThrow(() -> new RuntimeException("Bank account not found with ID: " + br.getId()));
+                    existing.setAccountName(br.getAccountName());
+                    existing.setShortName(br.getShortName());
+                    existing.setAccountNumber(br.getAccountNumber());
+                    existing.setBankName(br.getBankName());
+                    existing.setBranchName(br.getBranchName());
+                    existing.setIfscCode(br.getIfscCode());
+                    existing.setOpeningBalance(br.getOpeningBalance());
+                    existing.setOpeningDate(br.getOpeningDate());
+                } else {
+                    BankAccount bank = BankAccount.builder()
+                            .accountName(br.getAccountName())
+                            .shortName(br.getShortName())
+                            .accountNumber(br.getAccountNumber())
+                            .bankName(br.getBankName())
+                            .branchName(br.getBranchName())
+                            .ifscCode(br.getIfscCode())
+                            .openingBalance(br.getOpeningBalance())
+                            .openingDate(br.getOpeningDate())
+                            .company(company)
+                            .build();
+                    company.getBankAccounts().add(bank);
+                }
             }
         }
 
-        // Map Branches
+        // Manage Branches
         if (request.getBranches() != null && !request.getBranches().isEmpty()) {
-            company.getBranches().clear();
+            Set<UUID> incomingIds = request.getBranches().stream()
+                    .map(BranchRequest::getId)
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toSet());
+
+            System.out.println("Processing Branches. Incoming IDs: " + incomingIds);
+            System.out.println("Existing Branch IDs: " + company.getBranches().stream().map(Branch::getId).collect(Collectors.toList()));
+
+            company.getBranches().removeIf(b -> b.getId() != null && !incomingIds.contains(b.getId()));
+
             for (BranchRequest branchReq : request.getBranches()) {
-                Branch branch = Branch.builder()
-                        .name(branchReq.getName())
-                        .siteType(SiteType.valueOf(branchReq.getSiteType().toUpperCase()))
-                        .branchType(BranchType.valueOf(branchReq.getBranchType().toUpperCase()))
-                        .phone(branchReq.getPhone())
-                        .alternatePhoneNo(branchReq.getAlternatePhoneNo())
-                        .emailId(branchReq.getEmailId())
-                        .address(branchReq.getAddress() != null ? mapAddress(branchReq.getAddress())
-                                : mapAddress(request.getAddress()))
-                        .company(company)
-                        .build();
-                company.getBranches().add(branch);
+                Address branchAddr = branchReq.getAddress() != null ? mapAddress(branchReq.getAddress())
+                        : mapAddress(request.getAddress());
+
+                if (branchReq.getId() != null) {
+                    Branch existing = company.getBranches().stream()
+                            .filter(b -> b.getId().equals(branchReq.getId()))
+                            .findFirst()
+                            .orElseThrow(() -> new RuntimeException("Branch not found with ID: " + branchReq.getId()));
+                    existing.setName(branchReq.getName());
+                    existing.setSiteType(SiteType.valueOf(branchReq.getSiteType().toUpperCase()));
+                    existing.setBranchType(BranchType.valueOf(branchReq.getBranchType().toUpperCase()));
+                    existing.setPhone(branchReq.getPhone());
+                    existing.setAlternatePhoneNo(branchReq.getAlternatePhoneNo());
+                    existing.setEmailId(branchReq.getEmailId());
+                    existing.setAddress(branchAddr);
+                } else {
+                    Branch branch = Branch.builder()
+                            .name(branchReq.getName())
+                            .siteType(SiteType.valueOf(branchReq.getSiteType().toUpperCase()))
+                            .branchType(BranchType.valueOf(branchReq.getBranchType().toUpperCase()))
+                            .phone(branchReq.getPhone())
+                            .alternatePhoneNo(branchReq.getAlternatePhoneNo())
+                            .emailId(branchReq.getEmailId())
+                            .address(branchAddr)
+                            .company(company)
+                            .build();
+                    company.getBranches().add(branch);
+                }
             }
         } else if (!isUpdate) {
             throw new RuntimeException("At least one branch is required");

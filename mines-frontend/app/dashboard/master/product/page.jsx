@@ -285,46 +285,39 @@ export default function ProductPage() {
         const error = formik.touched[field] && formik.errors[field];
 
         return (
-            <Box sx={{ width: '100%', mb: 2 }}>
+            <Box sx={{ width: '100%', mb: 1.5 }}>
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
-                {isSelect ? (
-                    <Box>
-                        <Select
-                            fullWidth size="small"
-                            name={field}
-                            value={value || ""}
-                            onChange={formik.handleChange}
-                            onBlur={formik.handleBlur}
-                            displayEmpty
-                            error={!!error}
-                            sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: error ? '1px solid #d32f2f' : '1px solid #F3F4F6', '& .MuiSelect-select': { color: value ? '#111827' : '#9CA3AF' }, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
-                        >
-                            <MenuItem value="">{placeholder}</MenuItem>
-                            {options.map((opt, i) => <MenuItem key={i} value={opt.value}>{opt.label}</MenuItem>)}
-                        </Select>
-                        {error && <Typography sx={{ color: '#d32f2f', fontSize: '11px', mt: 0.5, ml: 1 }}>{error}</Typography>}
-                    </Box>
-                ) : (
-                    <TextField
-                        fullWidth size="small"
-                        name={field}
-                        type={type}
-                        placeholder={placeholder}
-                        value={value || ""}
-                        onChange={formik.handleChange}
-                        onBlur={formik.handleBlur}
-                        error={!!error}
-                        helperText={error}
-                        sx={{
-                            '& .MuiOutlinedInput-root': {
-                                borderRadius: '12px',
-                                backgroundColor: '#F9FAFB',
-                                '& .MuiOutlinedInput-notchedOutline': { border: error ? '1px solid #d32f2f' : '1px solid #F3F4F6' }
-                            },
-                            '& .MuiFormHelperText-root': { ml: 1 }
-                        }}
-                    />
-                )}
+                <TextField
+                    fullWidth
+                    size="small"
+                    name={field}
+                    type={type}
+                    select={isSelect}
+                    placeholder={placeholder}
+                    variant="outlined"
+                    value={value || ""}
+                    onChange={formik.handleChange}
+                    onBlur={formik.handleBlur}
+                    error={!!error}
+                    helperText={error}
+                    FormHelperTextProps={{ sx: { ml: 0, mt: 0.5, fontSize: '11px', fontWeight: 500 } }}
+                    sx={{
+                        '& .MuiOutlinedInput-root': {
+                            borderRadius: '12px',
+                            backgroundColor: '#F8FAFC',
+                            transition: 'all 0.2s',
+                            '& fieldset': { borderColor: '#E5E7EB' },
+                            '&:hover fieldset': { borderColor: '#CBD5E1' },
+                            '&.Mui-focused fieldset': { borderColor: '#0057FF', borderWidth: '1.5px' }
+                        }
+                    }}
+                >
+                    {isSelect && options.map((opt, i) => (
+                        <MenuItem key={i} value={opt.value}>
+                            {opt.label}
+                        </MenuItem>
+                    ))}
+                </TextField>
             </Box>
         );
     };
@@ -522,28 +515,46 @@ export default function ProductPage() {
                                 <Typography variant="body1" sx={{ opacity: 0.9 }}>The product record has been saved successfully</Typography>
                             </Box>
                         ) : (
-                            <Box>
-                                <Typography variant="h4" sx={{ fontWeight: 900, mb: 3 }}>
-                                    {isEditing ? "Edit Product" : "New Product"}
-                                </Typography>
-                                <form onSubmit={formik.handleSubmit}>
-                                    <Grid container spacing={4}>
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("Product Name", "Enter name", false, "text", "name")}
-                                            {renderField("Short Name", "Enter short name", false, "text", "shortName")}
-                                            {renderField("RM Type", "Select type", true, "text", "rmType", [
-                                                { label: "CRUSHER", value: "CRUSHER" },
-                                                { label: "QUARRY", value: "QUARRY" },
-                                                { label: "BY PRODUCT", value: "BY_PRODUCT" }
-                                            ])}
-                                        </Grid>
+                                <Box>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+                                        <Typography variant="h4" sx={{ fontWeight: 900, fontSize: '24px', background: 'linear-gradient(to right, #111827, #374151)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                                            {isEditing ? "Edit Product" : "New Product"}
+                                        </Typography>
+                                        <IconButton onClick={handleCloseModal} sx={{ color: '#64748B' }}><CloseIcon /></IconButton>
+                                    </Box>
 
-                                        {(userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') && (
-                                            <Grid item xs={12}>
-                                                <Box sx={{ width: '100%' }}>
-                                                    <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Company</Typography>
-                                                    <Select
+                                    <form onSubmit={formik.handleSubmit}>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: "10px 20px" }}>
+                                            {/* Basic Information */}
+                                            <Box sx={{ width: '100%', mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>General Information</Typography></Box>
+                                            
+                                            <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Product Name *", "Enter product name", false, "text", "name")}</Box>
+                                            <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Short Name *", "Enter short name", false, "text", "shortName")}</Box>
+                                            <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("HSN Code *", "Enter HSN code", false, "text", "hsnc")}</Box>
+                                            <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("GST Percentage *", "Enter GST %", false, "number", "gst")}</Box>
+                                            <Box sx={{ width: 'calc(50% - 10px)' }}>
+                                                {renderField("RM Type *", "Select type", true, "text", "rmType", [
+                                                    { label: "CRUSHER", value: "CRUSHER" },
+                                                    { label: "QUARRY", value: "QUARRY" },
+                                                    { label: "BY PRODUCT", value: "BY_PRODUCT" }
+                                                ])}
+                                            </Box>
+                                            <Box sx={{ width: 'calc(50% - 10px)' }}>
+                                                {renderField("Status *", "Select status", true, "text", "status", [
+                                                    { label: "Active", value: "Active" },
+                                                    { label: "Inactive", value: "Inactive" }
+                                                ])}
+                                            </Box>
+
+                                            {/* Company & Branch Pricing */}
+                                            <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Pricing & Branch Control</Typography></Box>
+                                            
+                                            {(userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') && (
+                                                <Box sx={{ width: '100%', mb: 2 }}>
+                                                    <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Company *</Typography>
+                                                    <TextField
                                                         fullWidth size="small"
+                                                        select
                                                         name="companyId"
                                                         value={formik.values.companyId}
                                                         onChange={(e) => {
@@ -554,70 +565,94 @@ export default function ProductPage() {
                                                                 const comp = companies.find(c => c.id === e.target.value);
                                                                 if (comp) {
                                                                     const newPrices = (comp.branches || []).map(b => ({
-                                                                        branchId: b.id,
-                                                                        branchName: b.name,
-                                                                        rate: "0",
-                                                                        companyId: comp.id
+                                                                        branchId: b.id, branchName: b.name, rate: "0", companyId: comp.id
                                                                     }));
                                                                     formik.setFieldValue("branchPrices", newPrices);
                                                                 }
                                                             }
                                                         }}
                                                         disabled={isEditing}
-                                                        displayEmpty
-                                                        sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB', border: '1px solid #F3F4F6' }}
+                                                        variant="outlined"
+                                                        sx={{
+                                                            '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F8FAFC' }
+                                                        }}
                                                     >
                                                         <MenuItem value="" disabled>Select Company to load branches</MenuItem>
                                                         {(typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("companies") || "[]") : []).map(c => (
                                                             <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
                                                         ))}
-                                                    </Select>
-                                                    {formik.touched.companyId && formik.errors.companyId && (
-                                                        <Typography color="error" sx={{ fontSize: '0.75rem', ml: 1.5, mt: 0.5 }}>{formik.errors.companyId}</Typography>
-                                                    )}
+                                                    </TextField>
                                                 </Box>
-                                            </Grid>
-                                        )}
+                                            )}
 
-                                        <Grid item xs={12} sx={{ mt: 1 }}>
-                                        </Grid>
+                                            {formik.values.branchPrices.length > 0 && (
+                                                <TableContainer component={Box} sx={{ 
+                                                    width: '100%', 
+                                                    mt: 1, 
+                                                    border: '1px solid #E5E7EB', 
+                                                    borderRadius: '16px', 
+                                                    overflow: 'hidden',
+                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.03)'
+                                                }}>
+                                                    <Table size="small">
+                                                        <TableHead sx={{ backgroundColor: '#F8FAFC' }}>
+                                                            <TableRow>
+                                                                <TableCell sx={{ fontWeight: 800, fontSize: '12px', color: '#6B7280', textTransform: 'uppercase', py: 1.5 }}>Branch Name</TableCell>
+                                                                <TableCell sx={{ fontWeight: 800, fontSize: '12px', color: '#6B7280', textTransform: 'uppercase', py: 1.5, width: '220px' }} align="right">Price (₹)</TableCell>
+                                                            </TableRow>
+                                                        </TableHead>
+                                                        <TableBody>
+                                                            {formik.values.branchPrices.map((bp, idx) => (
+                                                                <TableRow key={idx} sx={{ '&:hover': { backgroundColor: '#F9FAFB' } }}>
+                                                                    <TableCell sx={{ fontWeight: 600, color: '#374151', borderBottom: '1px solid #F3F4FB' }}>{bp.branchName}</TableCell>
+                                                                    <TableCell sx={{ borderBottom: '1px solid #F3F4FB' }} align="right">
+                                                                        <TextField
+                                                                            size="small"
+                                                                            type="number"
+                                                                            placeholder="0"
+                                                                            value={bp.rate}
+                                                                            onChange={(e) => {
+                                                                                const newPrices = [...formik.values.branchPrices];
+                                                                                newPrices[idx].rate = e.target.value;
+                                                                                formik.setFieldValue("branchPrices", newPrices);
+                                                                            }}
+                                                                            InputProps={{
+                                                                                startAdornment: <InputAdornment position="start"><Typography sx={{ fontWeight: 700, fontSize: '14px', color: '#94A3B8' }}>₹</Typography></InputAdornment>,
+                                                                            }}
+                                                                            sx={{ 
+                                                                                width: '160px',
+                                                                                '& .MuiOutlinedInput-root': { 
+                                                                                    borderRadius: '10px', 
+                                                                                    backgroundColor: '#fff',
+                                                                                    '& fieldset': { borderColor: '#E5E7EB' }
+                                                                                } 
+                                                                            }}
+                                                                        />
+                                                                    </TableCell>
+                                                                </TableRow>
+                                                            ))}
+                                                        </TableBody>
+                                                    </Table>
+                                                </TableContainer>
+                                            )}
+                                        </Box>
 
-                                        {formik.values.branchPrices.map((bp, idx) => (
-                                            <Grid item xs={12} md={6} key={idx}>
-                                                <Box sx={{ p: 2, border: '1px solid #F3F4FB', borderRadius: '12px', backgroundColor: '#F9FAFB' }}>
-                                                    <Typography sx={{ fontSize: '12px', fontWeight: 700, color: '#6B7280', mb: 1 }}>{bp.branchName}</Typography>
-                                                    <TextField
-                                                        fullWidth size="small"
-                                                        type="number"
-                                                        placeholder="Enter rate"
-                                                        value={bp.rate}
-                                                        onChange={(e) => {
-                                                            const newPrices = [...formik.values.branchPrices];
-                                                            newPrices[idx].rate = e.target.value;
-                                                            formik.setFieldValue("branchPrices", newPrices);
-                                                        }}
-                                                        sx={{ '& .MuiOutlinedInput-root': { backgroundColor: '#fff', borderRadius: '8px' } }}
-                                                    />
-                                                </Box>
-                                            </Grid>
-                                        ))}
-
-                                        <Grid item xs={12} sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                                            <Button onClick={handleCloseModal} sx={{ color: '#64748B', fontWeight: 700, textTransform: 'none' }}>Cancel</Button>
+                                        <Box sx={{ mt: 6, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                                            <Button onClick={handleCloseModal} sx={{ color: '#64748B', fontWeight: 700, textTransform: 'none', fontSize: '15px' }}>Cancel</Button>
                                             <Button
                                                 type="submit"
                                                 variant="contained"
                                                 sx={{
                                                     background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
-                                                    borderRadius: '8px', px: 4, py: 1.2, fontWeight: 700, textTransform: 'none'
+                                                    borderRadius: '12px', px: 4, py: 1.2, fontWeight: 700, textTransform: 'none',
+                                                    boxShadow: '0 4px 12px rgba(0, 87, 255, 0.25)'
                                                 }}
                                             >
                                                 {isEditing ? "Update Product" : "Save Product"}
                                             </Button>
-                                        </Grid>
-                                    </Grid>
-                                </form>
-                            </Box>
+                                        </Box>
+                                    </form>
+                                </Box>
                         )}
                     </Box>
                 </DialogContent>
@@ -691,18 +726,26 @@ export default function ProductPage() {
                                         <Box sx={{ width: 4, height: 16, backgroundColor: '#10B981', borderRadius: 2 }} />
                                         Plant Pricing List
                                     </Typography>
-                                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2 }}>
-                                        {(selectedProduct.prices || []).map((price, idx) => (
-                                            <Box key={idx} sx={{ p: 1.5, border: '1px solid #F3F4F6', borderRadius: '12px' }}>
-                                                <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase' }}>
-                                                    {price.branchName || "Branch"}
-                                                </Typography>
-                                                <Typography sx={{ fontSize: '15px', fontWeight: 800, color: '#0057FF' }}>
-                                                    ₹{price.rate?.toLocaleString()}
-                                                </Typography>
-                                            </Box>
-                                        ))}
-                                    </Box>
+                                    <TableContainer component={Box} sx={{ mt: 1, border: '1px solid #E5E7EB', borderRadius: '16px', overflow: 'hidden' }}>
+                                        <Table size="small">
+                                            <TableHead sx={{ backgroundColor: '#F8FAFC' }}>
+                                                <TableRow>
+                                                    <TableCell sx={{ fontWeight: 800, fontSize: '12px', color: '#6B7280', textTransform: 'uppercase', py: 1.5 }}>Branch Name</TableCell>
+                                                    <TableCell sx={{ fontWeight: 800, fontSize: '12px', color: '#6B7280', textTransform: 'uppercase', py: 1.5 }} align="right">Price (₹)</TableCell>
+                                                </TableRow>
+                                            </TableHead>
+                                            <TableBody>
+                                                {(selectedProduct.prices || []).map((price, idx) => (
+                                                    <TableRow key={idx} sx={{ '&:hover': { backgroundColor: '#F9FAFB' } }}>
+                                                        <TableCell sx={{ fontWeight: 600, color: '#374151', borderBottom: '1px solid #F3F4FB' }}>{price.branchName || "Branch"}</TableCell>
+                                                        <TableCell sx={{ borderBottom: '1px solid #F3F4FB', fontWeight: 800, color: '#0057FF' }} align="right">
+                                                            ₹{price.rate?.toLocaleString()}
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </TableContainer>
                                 </Card>
                             </Box>
 

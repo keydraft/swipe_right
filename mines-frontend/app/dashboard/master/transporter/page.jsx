@@ -12,7 +12,7 @@ import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon,
     VisibilityOutlined as ViewIcon, EditOutlined as EditIcon,
     DeleteOutline as DeleteIcon, FileDownloadOutlined as DownloadIcon,
-    PrintOutlined as PrintIcon, SortOutlined as SortIcon
+    PrintOutlined as PrintIcon, SortOutlined as SortIcon, Close as CloseIcon
 } from "@mui/icons-material";
 import { palette } from "@/theme";
 import { transporterApi, adminApi } from "@/services/api";
@@ -36,7 +36,7 @@ function TransporterBranchDropdown({ companyId, value, onChange, renderField }) 
         }).catch(() => setBranches([]));
     }, [companyId]);
 
-    return renderField("Branch *", "Select Branch", "text", "branchId", true,
+    return renderField("Branch *", "Select Branch", true, "text", "branchId",
         branches.map(b => ({ label: b.name, value: b.id }))
     );
 }
@@ -155,6 +155,7 @@ export default function TransporterPage() {
             icode: "",
             gstin: "",
             phone: "",
+            email: "",
             address: {
                 addressLine1: "",
                 addressLine2: "",
@@ -198,6 +199,7 @@ export default function TransporterPage() {
             icode: transporter.icode || "",
             gstin: transporter.gstin || "",
             phone: transporter.phone || "",
+            email: transporter.email || "",
             address: transporter.address || {
                 addressLine1: "",
                 addressLine2: "",
@@ -242,7 +244,8 @@ export default function TransporterPage() {
         formik.resetForm();
     };
 
-    const renderField = (label, placeholder, type = "text", field = "", isSelect = false, options = []) => {
+    const renderField = (label, placeholder, isSelect = false, type = "text", field = "", options = []) => {
+        if (typeof field !== 'string') return null;
         const fieldKeys = field.split('.');
         let value = formik.values;
         for (const key of fieldKeys) value = value?.[key];
@@ -252,7 +255,7 @@ export default function TransporterPage() {
             : formik.touched[field] && formik.errors[field];
 
         return (
-            <Box sx={{ width: '100%', mb: 2 }}>
+            <Box sx={{ width: '100%', mb: 1.5 }}>
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
                 <TextField
                     fullWidth
@@ -273,13 +276,16 @@ export default function TransporterPage() {
                     onBlur={formik.handleBlur}
                     error={!!error}
                     helperText={error}
+                    FormHelperTextProps={{ sx: { ml: 0, mt: 0.5, fontSize: '11px', fontWeight: 500 } }}
                     sx={{
                         '& .MuiOutlinedInput-root': {
                             borderRadius: '12px',
-                            backgroundColor: '#F9FAFB',
-                            '& .MuiOutlinedInput-notchedOutline': { border: error ? '1px solid #d32f2f' : '1px solid #F3F4F6' }
-                        },
-                        '& .MuiFormHelperText-root': { ml: 1 }
+                            backgroundColor: '#F8FAFC',
+                            transition: 'all 0.2s',
+                            '& fieldset': { borderColor: '#E5E7EB' },
+                            '&:hover fieldset': { borderColor: '#CBD5E1' },
+                            '&.Mui-focused fieldset': { borderColor: '#0057FF', borderWidth: '1.5px' }
+                        }
                     }}
                 >
                     {isSelect && options.map((opt) => (
@@ -514,85 +520,70 @@ export default function TransporterPage() {
                                 </Typography>
                             </Box>
                         ) : (
-                            <Box>
-                                <Typography variant="h4" sx={{ fontWeight: 900, mb: 3 }}>
-                                    {isEditing ? "Edit Transporter" : "New Transporter"}
-                                </Typography>
+                                <Box>
+                                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+                                        <Typography variant="h4" sx={{ fontWeight: 900, fontSize: '24px', background: 'linear-gradient(to right, #111827, #374151)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                                            {isEditing ? "Edit Transporter" : "New Transporter"}
+                                        </Typography>
+                                        <IconButton onClick={handleCloseModal} sx={{ color: '#64748B' }}><CloseIcon /></IconButton>
+                                    </Box>
                                 <form onSubmit={formik.handleSubmit}>
-                                    <Grid container spacing={4}>
-                                        <Grid item xs={12} md={6}>
-                                            {currentUser?.role === "ADMIN" ? (
-                                                <>
-                                                    {renderField("Company *", "Select Company", "text", "companyId", true, allCompanies.map(c => ({ label: c.name, value: c.id })))}
-                                                    {formik.values.companyId && (
-                                                        <Box sx={{ mt: 1 }}>
-                                                            <TransporterBranchDropdown
-                                                                companyId={formik.values.companyId}
-                                                                value={formik.values.branchId}
-                                                                onChange={(val) => formik.setFieldValue("branchId", val)}
-                                                                renderField={renderField}
-                                                            />
-                                                        </Box>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <>
-                                                    {renderField("Company *", "Select Company", "text", "companyId", true, userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))}
-                                                    {formik.values.companyId && (
-                                                        <Box sx={{ mt: 1 }}>
-                                                            <TransporterBranchDropdown
-                                                                companyId={formik.values.companyId}
-                                                                value={formik.values.branchId}
-                                                                onChange={(val) => formik.setFieldValue("branchId", val)}
-                                                                renderField={renderField}
-                                                            />
-                                                        </Box>
-                                                    )}
-                                                </>
-                                            )}
-                                            {renderField("Transporter Code", "Code (Generated)", "text", "icode")}
-                                            {renderField("Transporter Name", "Enter name", "text", "name")}
-                                        </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("Phone Number", "Enter phone number", "text", "phone")}
-                                            {renderField("GSTIN Number", "Enter GSTIN", "text", "gstin")}
-                                        </Grid>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: "10px 20px" }}>
+                                        {/* Company & Branch Section */}
+                                        <Box sx={{ width: '100%', mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Entity Assignment</Typography></Box>
+                                        
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>
+                                            {currentUser?.role === "ADMIN" 
+                                                ? renderField("Company *", "Select Company", true, "text", "companyId", allCompanies.map(c => ({ label: c.name, value: c.id })))
+                                                : renderField("Company *", "Select Company", true, "text", "companyId", userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))
+                                            }
+                                        </Box>
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>
+                                            <TransporterBranchDropdown
+                                                companyId={formik.values.companyId}
+                                                value={formik.values.branchId}
+                                                onChange={(val) => formik.setFieldValue("branchId", val)}
+                                                renderField={renderField}
+                                            />
+                                        </Box>
 
-                                        <Grid item xs={12} md={6}>
-                                            {renderField("Address Line 1", "Enter street address", "text", "address.addressLine1")}
-                                            <Grid container spacing={2}>
-                                                <Grid item xs={6}>
-                                                    {renderField("District", "Enter district", "text", "address.district")}
-                                                </Grid>
-                                                <Grid item xs={6}>
-                                                    {renderField("State", "Enter state", "text", "address.state")}
-                                                </Grid>
-                                            </Grid>
-                                            {renderField("Pincode", "Enter pincode", "text", "address.pincode")}
-                                        </Grid>
+                                        {/* Basic Details */}
+                                        <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Basic Details</Typography></Box>
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Transporter Code *", "Code (e.g. TR-001)", false, "text", "icode")}</Box>
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Transporter Name *", "Enter full name", false, "text", "name")}</Box>
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Phone Number *", "10-digit mobile number", false, "text", "phone")}</Box>
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("GSTIN Number", "GST Identification Number", false, "text", "gstin")}</Box>
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Email Address", "Email for communication", false, "text", "email")}</Box>
 
-                                        <Grid item xs={12} sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                                            <Button
-                                                onClick={handleCloseModal}
-                                                sx={{ color: '#64748B', fontWeight: 700, textTransform: 'none' }}
-                                            >
-                                                Cancel
-                                            </Button>
-                                            <Button
-                                                type="submit"
-                                                variant="contained"
-                                                sx={{
-                                                    background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
-                                                    borderRadius: '8px',
-                                                    px: 4, py: 1.2,
-                                                    fontWeight: 700,
-                                                    textTransform: 'none'
-                                                }}
-                                            >
-                                                {isEditing ? "Update Transporter" : "Save Transporter"}
-                                            </Button>
-                                        </Grid>
-                                    </Grid>
+                                        {/* Address Details */}
+                                        <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Address Details</Typography></Box>
+                                        <Box sx={{ width: '100%' }}>{renderField("Address Line 1 *", "Room/Building/Street", false, "text", "address.addressLine1")}</Box>
+                                        <Box sx={{ width: '100%' }}>{renderField("Address Line 2", "Area/Landmark", false, "text", "address.addressLine2")}</Box>
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("District *", "City or District", false, "text", "address.district")}</Box>
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("State *", "State/Province", false, "text", "address.state")}</Box>
+                                        <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Pincode *", "6-digit postal code", false, "text", "address.pincode")}</Box>
+                                    </Box>
+
+                                    <Box sx={{ mt: 6, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+                                        <Button
+                                            onClick={handleCloseModal}
+                                            sx={{ color: '#64748B', fontWeight: 700, textTransform: 'none', fontSize: '15px' }}
+                                        >
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            type="submit"
+                                            variant="contained"
+                                            sx={{
+                                                background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                                                borderRadius: '12px', px: 4, py: 1.2,
+                                                fontWeight: 700, textTransform: 'none',
+                                                boxShadow: '0 4px 12px rgba(0, 87, 255, 0.25)'
+                                            }}
+                                        >
+                                            {isEditing ? "Update Transporter" : "Complete Registration"}
+                                        </Button>
+                                    </Box>
                                 </form>
                             </Box>
                         )}

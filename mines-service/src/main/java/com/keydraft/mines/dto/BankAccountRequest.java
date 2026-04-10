@@ -5,11 +5,14 @@ import jakarta.validation.constraints.Pattern;
 import lombok.*;
 import java.time.LocalDate;
 
+import java.util.UUID;
+
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class BankAccountRequest {
+    private UUID id;
     @NotBlank(message = "Account name is required")
     private String accountName;
     private String shortName;

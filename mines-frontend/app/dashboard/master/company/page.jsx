@@ -77,12 +77,14 @@ export default function CompanyPage() {
     }, [page, rowsPerPage, searchQuery]);
 
     const initialBranchState = {
+        id: null,
         name: "", contactPerson: "", addressLine1: "", addressLine2: "",
         state: "", district: "", pincode: "", contactNo: "", alternateNo: "",
         siteType: "", plantType: "", active: true
     };
 
     const initialBankAccountState = {
+        id: null,
         accountName: "", shortName: "", accountNumber: "", bankName: "",
         branchName: "", ifscCode: "", openingBalance: "", openingDate: ""
     };
@@ -128,6 +130,7 @@ export default function CompanyPage() {
                     pincode: values.pincode
                 },
                 bankAccounts: values.bankAccounts.map(b => ({
+                    id: b.id,
                     accountName: b.accountName,
                     shortName: b.shortName,
                     accountNumber: b.accountNumber,
@@ -138,6 +141,7 @@ export default function CompanyPage() {
                     openingDate: b.openingDate
                 })),
                 branches: values.branches.map(b => ({
+                    id: b.id,
                     name: b.name,
                     siteType: b.siteType || "PRODUCTION",
                     branchType: b.plantType || "CRUSHER",
@@ -216,6 +220,7 @@ export default function CompanyPage() {
         const company = companies[index];
 
         const mappedBranches = (company.branches || []).map(b => ({
+            id: b.id,
             name: b.name,
             contactNo: b.phone,
             alternateNo: b.alternatePhoneNo,
@@ -230,6 +235,7 @@ export default function CompanyPage() {
         }));
 
         const mappedBankAccounts = (company.bankAccounts || []).map(b => ({
+            id: b.id,
             accountName: b.accountName,
             shortName: b.shortName,
             accountNumber: b.accountNumber,
