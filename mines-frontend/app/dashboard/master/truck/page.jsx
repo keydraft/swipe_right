@@ -6,14 +6,15 @@ import {
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
     Select, MenuItem, CircularProgress, Grid, Divider, TablePagination,
-    Snackbar, Alert
+    Snackbar, Alert, Stepper, Step, StepLabel
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon,
     VisibilityOutlined as ViewIcon, EditOutlined as EditIcon,
     DeleteOutline as DeleteIcon, FileDownloadOutlined as DownloadIcon,
     PrintOutlined as PrintIcon, SortOutlined as SortIcon,
-    CloudUploadOutlined as UploadIcon
+    CloudUploadOutlined as UploadIcon, Close as CloseIcon,
+    MoreVertOutlined as ActionIcon
 } from "@mui/icons-material";
 import { palette } from "@/theme";
 import { truckApi, transporterApi, customerApi, adminApi } from "@/services/api";
@@ -55,6 +56,7 @@ export default function TruckPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [showSuccess, setShowSuccess] = useState(false);
+    const [activeStep, setActiveStep] = useState(0);
 
     // Notification State
     const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
@@ -196,19 +198,29 @@ export default function TruckPage() {
             chassisNo: "",
             tareWeight: "",
             usageType: "Commercial",
-            fuelType: "Diesel",
+            fuelType: "DIESEL",
             insuranceValidity: "",
             permitValidity: "",
             fcValidity: ""
         },
         validationSchema: truckValidationSchema,
-        onSubmit: async (values) => {
+        onSubmit: async (values, { setSubmitting }) => {
+            // Only submit on the final step
+            if (activeStep !== steps.length - 1) {
+                setSubmitting(false);
+                return;
+            }
             try {
                 const payload = {
                     ...values,
-                    transporterId: values.ownershipType === "TRANSPORTER" ? values.transporterId : null,
-                    customerId: values.ownershipType === "CUSTOMER" ? values.customerId : null,
-                    tareWeight: parseFloat(values.tareWeight) || 0
+                    companyId: values.companyId || null,
+                    branchId: values.branchId || null,
+                    transporterId: values.ownershipType === "TRANSPORTER" && values.transporterId ? values.transporterId : null,
+                    customerId: values.ownershipType === "CUSTOMER" && values.customerId ? values.customerId : null,
+                    tareWeight: parseFloat(values.tareWeight) || 0,
+                    insuranceValidity: values.insuranceValidity || null,
+                    permitValidity: values.permitValidity || null,
+                    fcValidity: values.fcValidity || null
                 };
 
                 const response = await truckApi.upsert(payload, selectedFiles, editingId);
@@ -226,6 +238,79 @@ export default function TruckPage() {
         },
     });
 
+    const steps = ["General Truck Details", "Documents & Validity"];
+
+    const handleNext = async () => {
+        if (activeStep === 0) {
+            const fieldsToValidate = ["truckNo", "ownershipType", "tareWeight"];
+            if (formik.values.ownershipType === "TRANSPORTER") fieldsToValidate.push("transporterId");
+            if (formik.values.ownershipType === "CUSTOMER") fieldsToValidate.push("customerId");
+
+            const touchedFields = fieldsToValidate.reduce((acc, field) => ({ ...acc, [field]: true }), {});
+            formik.setTouched(touchedFields);
+
+            const errors = await formik.validateForm();
+            const hasErrors = fieldsToValidate.some(field => errors[field]);
+            if (hasErrors) return;
+        }
+        setActiveStep((prev) => prev + 1);
+    };
+
+    const handleBack = () => setActiveStep((prev) => prev - 1);
+
+    const isStepComplete = () => {
+        if (activeStep === 0) {
+            const { truckNo, ownershipType, tareWeight, transporterId, customerId } = formik.values;
+            if (!truckNo || !ownershipType || !tareWeight) return false;
+            if (ownershipType === "TRANSPORTER" && !transporterId) return false;
+            if (ownershipType === "CUSTOMER" && !customerId) return false;
+            return true;
+        }
+        return true;
+    };
+
+    const renderStepper = () => {
+        const fillPercentage = ((activeStep + 1) / steps.length) * 100;
+        return (
+            <Box sx={{ width: '100%', mb: 4, pt: 1, display: showSuccess ? 'none' : 'block' }}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', gap: { xs: 2, sm: 8 }, mb: 2 }}>
+                    {steps.map((label, index) => {
+                        const isActive = activeStep === index;
+                        const isCompleted = activeStep > index;
+                        return (
+                            <Box key={index} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '200px' }}>
+                                <Box sx={{
+                                    width: 40, height: 40, borderRadius: '50%',
+                                    display: 'flex', justifyContent: 'center', alignItems: 'center',
+                                    backgroundColor: isCompleted ? '#EBFDF5' : '#F3F4F6',
+                                    color: isCompleted ? '#10B981' : (isActive ? '#0057FF' : '#9CA3AF'),
+                                    fontWeight: 'bold', fontSize: '16px', mb: 1,
+                                    border: isActive ? '2px solid #0057FF' : 'none'
+                                }}>
+                                    {index + 1}
+                                </Box>
+                                <Typography sx={{
+                                    color: (isActive || isCompleted) ? '#374151' : 'transparent',
+                                    fontSize: '13px', fontWeight: 600, textAlign: 'center', height: '20px'
+                                }}>
+                                    {isActive || isCompleted ? label : ""}
+                                </Typography>
+                            </Box>
+                        );
+                    })}
+                </Box>
+                <Box sx={{ width: '100%', height: '6px', backgroundColor: '#FFFFFF', borderRadius: '4px', position: 'relative', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <Box sx={{
+                        position: 'absolute', top: 0, left: 0, height: '100%',
+                        background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                        borderRadius: '4px', width: `${fillPercentage}%`,
+                        transition: 'width 0.4s ease-in-out'
+                    }} />
+                </Box>
+            </Box>
+        );
+    };
+
     const handleFileChange = (field, file) => {
         setSelectedFiles(prev => ({ ...prev, [field]: file }));
     };
@@ -238,6 +323,7 @@ export default function TruckPage() {
         setExistingFiles({ rcFront: null, rcBack: null, insurance: null, permit: null, fc: null });
         setOpenModal(true);
         setShowSuccess(false);
+        setActiveStep(0);
     };
 
     const handleEditTruck = (truck) => {
@@ -257,7 +343,7 @@ export default function TruckPage() {
             chassisNo: truck.chassisNo || "",
             tareWeight: truck.tareWeight || "",
             usageType: truck.usageType || "Commercial",
-            fuelType: truck.fuelType || "Diesel",
+            fuelType: truck.fuelType || "DIESEL",
             insuranceValidity: truck.insuranceValidity || "",
             permitValidity: truck.permitValidity || "",
             fcValidity: truck.fcValidity || ""
@@ -272,6 +358,7 @@ export default function TruckPage() {
         });
         setOpenModal(true);
         setShowSuccess(false);
+        setActiveStep(0);
     };
 
     const handleViewTruck = (truck) => {
@@ -304,14 +391,16 @@ export default function TruckPage() {
     const handleCloseModal = () => {
         setOpenModal(false);
         formik.resetForm();
+        setActiveStep(0);
         setSelectedFiles({ rcFront: null, rcBack: null, insurance: null, permit: null, fc: null });
         setExistingFiles({ rcFront: null, rcBack: null, insurance: null, permit: null, fc: null });
     };
 
-    const renderUploadButton = (field, label) => {
+    const renderUploadButton = (label, field) => {
         const hasExisting = !!existingFiles[field];
         const isSelected = !!selectedFiles[field];
-        const serverPath = "http://localhost:8080/uploads/employees/";
+        const serverPath = "http://localhost:8080/uploads/";
+        const fileName = isSelected ? selectedFiles[field].name : (hasExisting ? "File Uploaded" : label);
 
         return (
             <Box sx={{ display: 'flex', gap: 1, width: '100%', alignItems: 'center' }}>
@@ -329,13 +418,13 @@ export default function TruckPage() {
                         borderRadius: '8px',
                         fontSize: '12px',
                         fontWeight: 600,
-                        py: 1,
+                        py: 1.2,
                         whiteSpace: 'nowrap',
                         height: '40px',
                         '&:hover': { background: isSelected || hasExisting ? '#059669' : '#003499' }
                     }}
                 >
-                    {isSelected || hasExisting ? "File Uploaded" : label}
+                    {fileName}
                     <input hidden type="file" onChange={(e) => handleFileChange(field, e.target.files[0])} />
                 </Button>
                 {(hasExisting || isSelected) && (
@@ -364,7 +453,6 @@ export default function TruckPage() {
                         VIEW
                     </Button>
                 )}
-                {!hasExisting && !isSelected && <Box sx={{ width: '70px', display: { xs: 'none', md: 'block' } }} />}
             </Box>
         );
     };
@@ -409,6 +497,9 @@ export default function TruckPage() {
                         onChange={(e) => {
                             if (field === "truckNo") {
                                 formik.setFieldValue(field, e.target.value.toUpperCase());
+                            } else if (type === "number") {
+                                const val = e.target.value.replace(/[^0-9.]/g, '');
+                                formik.setFieldValue(field, val);
                             } else {
                                 formik.handleChange(e);
                             }
@@ -416,11 +507,12 @@ export default function TruckPage() {
                         onBlur={formik.handleBlur}
                         error={!!error}
                         helperText={error}
+                        InputLabelProps={type === "date" ? { shrink: true } : {}}
                         sx={{
                             '& .MuiOutlinedInput-root': {
                                 borderRadius: '12px',
                                 backgroundColor: '#F9FAFB',
-                                '& .MuiOutlinedInput-notchedOutline': { border: error ? '1px solid #d32f2f' : '1px solid #F3F4F6' }
+                                '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' }
                             },
                             '& .MuiFormHelperText-root': { ml: 1 }
                         }}
@@ -428,6 +520,114 @@ export default function TruckPage() {
                 )}
             </Box>
         );
+    };
+
+    const renderStepContent = () => {
+        const itemWidth = "calc(50% - 12px)";
+        const gap = "24px";
+
+        if (activeStep === 0) {
+            return (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
+                    <Box sx={{ width: '100%', mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Basic Information</Typography></Box>
+                    
+                    <Box sx={{ width: itemWidth }}>
+                        {currentUser?.role === "ADMIN" 
+                            ? renderField("Company *", "Select Company", true, "text", "companyId", allCompanies.map(c => ({ label: c.name, value: c.id })))
+                            : renderField("Company *", "Select Company", true, "text", "companyId", userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))
+                        }
+                    </Box>
+                    <Box sx={{ width: itemWidth }}>
+                        {formik.values.companyId && (
+                            <BranchDropdown
+                                companyId={formik.values.companyId}
+                                value={formik.values.branchId}
+                                onChange={(val) => formik.setFieldValue("branchId", val)}
+                                renderField={renderField}
+                            />
+                        )}
+                    </Box>
+
+                    <Box sx={{ width: itemWidth }}>{renderField("Truck Number *", "Enter truck number (e.g. MH12AB1234)", false, "text", "truckNo")}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Ownership Type *", "Select type", true, "text", "ownershipType", [
+                        { label: "Owned", value: "OWN" },
+                        { label: "Transporter", value: "TRANSPORTER" },
+                        { label: "Customer", value: "CUSTOMER" }
+                    ])}</Box>
+
+                    {formik.values.ownershipType === "TRANSPORTER" && (
+                        <Box sx={{ width: itemWidth }}>
+                            {renderField("Select Transporter *", "Choose transporter", true, "text", "transporterId",
+                                transporters.map(tr => ({ label: `${tr.name} (${tr.iCode})`, value: tr.id }))
+                            )}
+                        </Box>
+                    )}
+
+                    {formik.values.ownershipType === "CUSTOMER" && (
+                        <Box sx={{ width: itemWidth }}>
+                            {renderField("Select Customer *", "Choose customer", true, "text", "customerId",
+                                customers.map(cu => ({ label: cu.name, value: cu.id }))
+                            )}
+                        </Box>
+                    )}
+
+                    <Box sx={{ width: itemWidth }}>{renderField("Owner Name (optional)", "Enter owner name", false, "text", "registerName")}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Tare Weight (kg) *", "Enter weight", false, "number", "tareWeight")}</Box>
+
+                    <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Technical Specifications</Typography></Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Make", "Enter make", false, "text", "make")}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Model", "Enter model", false, "text", "model")}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Usage Type", "Select usage", true, "text", "usageType", [
+                        { label: "Commercial", value: "Commercial" },
+                        { label: "Passenger", value: "Passenger" }
+                    ])}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Fuel Type", "Select fuel", true, "text", "fuelType", [
+                        { label: "Petrol", value: "PETROL" },
+                        { label: "Diesel", value: "DIESEL" },
+                        { label: "EV", value: "EV" }
+                    ])}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Engine Number", "Enter engine no", false, "text", "engineNo")}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Chassis Number", "Enter chassis no", false, "text", "chassisNo")}</Box>
+                </Box>
+            );
+        }
+
+        if (activeStep === 1) {
+            return (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
+                    <Box sx={{ width: '100%', mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Registration Certificate (RC)</Typography></Box>
+                    <Box sx={{ width: itemWidth }}>
+                        <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>RC Front</Typography>
+                        {renderUploadButton("Upload RC Front", "rcFront")}
+                    </Box>
+                    <Box sx={{ width: itemWidth }}>
+                        <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>RC Back</Typography>
+                        {renderUploadButton("Upload RC Back", "rcBack")}
+                    </Box>
+
+                    <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Insurance Details</Typography></Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Insurance Validity", "yyyy-mm-dd", false, "date", "insuranceValidity")}</Box>
+                    <Box sx={{ width: itemWidth }}>
+                        <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Upload Insurance</Typography>
+                        {renderUploadButton("Upload Insurance", "insurance")}
+                    </Box>
+
+                    <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Permit Details</Typography></Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Permit Validity", "yyyy-mm-dd", false, "date", "permitValidity")}</Box>
+                    <Box sx={{ width: itemWidth }}>
+                        <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Upload Permit</Typography>
+                        {renderUploadButton("Upload Permit", "permit")}
+                    </Box>
+
+                    <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>FC Details</Typography></Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("FC Validity", "yyyy-mm-dd", false, "date", "fcValidity")}</Box>
+                    <Box sx={{ width: itemWidth }}>
+                        <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Upload FC</Typography>
+                        {renderUploadButton("Upload FC", "fc")}
+                    </Box>
+                </Box>
+            );
+        }
     };
 
     return (
@@ -641,14 +841,9 @@ export default function TruckPage() {
                     }}>
                         {showSuccess ? (
                             <Box sx={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                py: 6,
-                                textAlign: 'center',
-                                color: '#fff',
-                                minHeight: '260px'
+                                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                                justifyContent: 'center', py: 6, textAlign: 'center',
+                                color: '#fff', minHeight: '260px'
                             }}>
                                 <Typography variant="h3" sx={{ fontWeight: 800, mb: 1, fontSize: '32px' }}>
                                     Truck Registered
@@ -659,202 +854,63 @@ export default function TruckPage() {
                             </Box>
                         ) : (
                             <Box>
-                                <Typography variant="h4" sx={{ fontWeight: 900, mb: 3 }}>
-                                    {isEditing ? "Edit Truck" : "New Truck Registry"}
-                                </Typography>
-                                <form onSubmit={formik.handleSubmit}>
-                                    <Grid container spacing={4}>
-                                        <Grid item xs={12} md={6}>
-                                            {currentUser?.role === "ADMIN" ? (
-                                                <>
-                                                    {renderField("Company *", "Select Company", true, "text", "companyId", allCompanies.map(c => ({ label: c.name, value: c.id })))}
-                                                    {formik.values.companyId && (
-                                                        <Box sx={{ mt: 1 }}>
-                                                            <BranchDropdown
-                                                                companyId={formik.values.companyId}
-                                                                value={formik.values.branchId}
-                                                                onChange={(val) => formik.setFieldValue("branchId", val)}
-                                                                renderField={renderField}
-                                                            />
-                                                        </Box>
-                                                    )}
-                                                </>
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+                                    <Typography variant="h4" sx={{ fontWeight: 900 }}>
+                                        {isEditing ? "Edit Truck" : "New Truck Registry"}
+                                    </Typography>
+                                    <IconButton onClick={handleCloseModal} sx={{ color: '#64748B' }}>
+                                        <CloseIcon />
+                                    </IconButton>
+                                </Box>
+
+                                {renderStepper()}
+
+                                <Box>
+                                    <Box sx={{ minHeight: '350px' }}>
+                                        {renderStepContent()}
+                                    </Box>
+
+                                    <Box sx={{ mt: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <Button
+                                            onClick={activeStep === 0 ? handleCloseModal : handleBack}
+                                            sx={{ color: '#64748B', fontWeight: 700, textTransform: 'none', fontSize: '15px' }}
+                                        >
+                                            {activeStep === 0 ? "Cancel" : "Back"}
+                                        </Button>
+                                        <Box sx={{ display: 'flex', gap: 2 }}>
+                                            {activeStep < steps.length - 1 ? (
+                                                <Button
+                                                    variant="contained"
+                                                    onClick={handleNext}
+                                                    disabled={!isStepComplete()}
+                                                    sx={{
+                                                        background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                                                        borderRadius: '12px', px: 4, py: 1.2,
+                                                        fontWeight: 700, textTransform: 'none',
+                                                        boxShadow: '0 4px 12px rgba(0, 87, 255, 0.25)',
+                                                        '&:disabled': { background: '#E2E8F0' }
+                                                    }}
+                                                >
+                                                    Next Step
+                                                </Button>
                                             ) : (
-                                                <>
-                                                    {renderField("Company *", "Select Company", true, "text", "companyId", userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))}
-                                                    {formik.values.companyId && (
-                                                        <Box sx={{ mt: 1 }}>
-                                                            <BranchDropdown
-                                                                companyId={formik.values.companyId}
-                                                                value={formik.values.branchId}
-                                                                onChange={(val) => formik.setFieldValue("branchId", val)}
-                                                                renderField={renderField}
-                                                            />
-                                                        </Box>
-                                                    )}
-                                                </>
+                                                <Button
+                                                    variant="contained"
+                                                    disabled={formik.isSubmitting}
+                                                    onClick={() => formik.handleSubmit()}
+                                                    sx={{
+                                                        background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+                                                        borderRadius: '12px', px: 4, py: 1.2,
+                                                        fontWeight: 700, textTransform: 'none',
+                                                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                                                    }}
+                                                >
+                                                    {formik.isSubmitting ? <CircularProgress size={24} color="inherit" /> : (isEditing ? "Update Truck" : "Complete Registration")}
+                                                </Button>
                                             )}
-                                            {renderField("Truck Number", "Enter truck number (e.g. MH12AB1234)", false, "text", "truckNo")}
-                                            {renderField("Ownership Type", "Select type", true, "text", "ownershipType", [
-                                                { label: "Owned", value: "OWN" },
-                                                { label: "Transporter", value: "TRANSPORTER" },
-                                                { label: "Customer", value: "CUSTOMER" }
-                                            ])}
-
-                                            {formik.values.ownershipType === "TRANSPORTER" && (
-                                                <Box sx={{ mt: 1 }}>
-                                                    {renderField("Select Transporter", "Choose transporter", true, "text", "transporterId",
-                                                        transporters.map(tr => ({ label: `${tr.name} (${tr.iCode})`, value: tr.id }))
-                                                    )}
-                                                </Box>
-                                            )}
-
-                                            {formik.values.ownershipType === "CUSTOMER" && (
-                                                <Box sx={{ mt: 1 }}>
-                                                    {renderField("Select Customer", "Choose customer", true, "text", "customerId",
-                                                        customers.map(cu => ({ label: cu.name, value: cu.id }))
-                                                    )}
-                                                </Box>
-                                            )}
-
-                                            {renderField("Owner Name (optional)", "Enter owner name", false, "text", "ownerName")}
-                                            {renderField("Tare Weight (kg)", "Enter weight", false, "number", "tareWeight")}
-                                        </Grid>
-
-                                        <Grid item xs={12} md={6}>
-                                            <Grid container spacing={2}>
-                                                <Grid item xs={6}>
-                                                    {renderField("Make", "Enter make", false, "text", "make")}
-                                                </Grid>
-                                                <Grid item xs={6}>
-                                                    {renderField("Model", "Enter model", false, "text", "model")}
-                                                </Grid>
-                                            </Grid>
-                                            {renderField("Usage Type", "Select usage", true, "text", "usageType", [
-                                                { label: "Commercial", value: "COMMERCIAL" },
-                                                { label: "Passenger", value: "PASSENGER" }
-                                            ])}
-                                            {renderField("Fuel Type", "Select fuel", true, "text", "fuelType", [
-                                                { label: "Petrol", value: "PETROL" },
-                                                { label: "Diesel", value: "DIESEL" },
-                                                { label: "EV", value: "EV" }
-                                            ])}
-                                            {renderField("Engine Number", "Enter engine no", false, "text", "engineNo")}
-                                            {renderField("Chassis Number", "Enter chassis no", false, "text", "chassisNo")}
-                                        </Grid>
-
-                                        <Grid item xs={12}>
-                                            <Divider sx={{ my: 1 }}>
-                                                <Typography sx={{ fontSize: '12px', fontWeight: 800, color: '#94A3B8', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                                                    Documents & Validity
-                                                </Typography>
-                                            </Divider>
-                                        </Grid>
-
-                                        {/* RC Section */}
-                                        <Grid item xs={12}>
-                                            <Grid container spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
-                                                <Grid item xs={12} md={4}>
-                                                    <Typography sx={{ fontSize: '13px', color: '#1E293B', fontWeight: 700 }}>RC (Registration Certificate)</Typography>
-                                                </Grid>
-                                                <Grid item xs={12} md={4}>
-                                                    {renderUploadButton('rcFront', 'Upload RC Front')}
-                                                </Grid>
-                                                <Grid item xs={12} md={4}>
-                                                    {renderUploadButton('rcBack', 'Upload RC Back')}
-                                                </Grid>
-                                            </Grid>
-                                        </Grid>
-
-                                        {/* Insurance Section */}
-                                        <Grid item xs={12}>
-                                            <Grid container spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
-                                                <Grid item xs={12} md={4}>
-                                                    <Typography sx={{ fontSize: '13px', color: '#1E293B', fontWeight: 700 }}>Insurance Validity</Typography>
-                                                </Grid>
-                                                <Grid item xs={12} md={4}>
-                                                    <TextField
-                                                        fullWidth type="date" size="small"
-                                                        name="insuranceValidity"
-                                                        value={formik.values.insuranceValidity}
-                                                        onChange={formik.handleChange}
-                                                        InputLabelProps={{ shrink: true }}
-                                                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F8FAFC' } }}
-                                                    />
-                                                </Grid>
-                                                <Grid item xs={12} md={4}>
-                                                    {renderUploadButton('insurance', 'Upload Insurance')}
-                                                </Grid>
-                                            </Grid>
-                                        </Grid>
-
-                                        {/* Permit Section */}
-                                        <Grid item xs={12}>
-                                            <Grid container spacing={2} alignItems="center" sx={{ mb: 2.5 }}>
-                                                <Grid item xs={12} md={4}>
-                                                    <Typography sx={{ fontSize: '13px', color: '#1E293B', fontWeight: 700 }}>Permit Validity</Typography>
-                                                </Grid>
-                                                <Grid item xs={12} md={4}>
-                                                    <TextField
-                                                        fullWidth type="date" size="small"
-                                                        name="permitValidity"
-                                                        value={formik.values.permitValidity}
-                                                        onChange={formik.handleChange}
-                                                        InputLabelProps={{ shrink: true }}
-                                                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F8FAFC' } }}
-                                                    />
-                                                </Grid>
-                                                <Grid item xs={12} md={4}>
-                                                    {renderUploadButton('permit', 'Upload Permit')}
-                                                </Grid>
-                                            </Grid>
-                                        </Grid>
-
-                                        {/* FC Section */}
-                                        <Grid item xs={12}>
-                                            <Grid container spacing={2} alignItems="center" sx={{ mb: 1 }}>
-                                                <Grid item xs={12} md={4}>
-                                                    <Typography sx={{ fontSize: '13px', color: '#1E293B', fontWeight: 700 }}>FC Validity</Typography>
-                                                </Grid>
-                                                <Grid item xs={12} md={4}>
-                                                    <TextField
-                                                        fullWidth type="date" size="small"
-                                                        name="fcValidity"
-                                                        value={formik.values.fcValidity}
-                                                        onChange={formik.handleChange}
-                                                        InputLabelProps={{ shrink: true }}
-                                                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F8FAFC' } }}
-                                                    />
-                                                </Grid>
-                                                <Grid item xs={12} md={4}>
-                                                    {renderUploadButton('fc', 'Upload FC')}
-                                                </Grid>
-                                            </Grid>
-                                        </Grid>
-
-                                        <Grid item xs={12} sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                                            <Button
-                                                onClick={handleCloseModal}
-                                                sx={{ color: '#64748B', fontWeight: 700, textTransform: 'none' }}
-                                            >
-                                                Cancel
-                                            </Button>
-                                            <Button
-                                                type="submit"
-                                                variant="contained"
-                                                sx={{
-                                                    background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
-                                                    borderRadius: '8px',
-                                                    px: 4, py: 1.2,
-                                                    fontWeight: 700,
-                                                    textTransform: 'none'
-                                                }}
-                                            >
-                                                {isEditing ? "Update Truck" : "Register Truck"}
-                                            </Button>
-                                        </Grid>
-                                    </Grid>
-                                </form>
+                                        </Box>
+                                    </Box>
+                                </Box>
                             </Box>
                         )}
                     </Box>
@@ -1056,7 +1112,7 @@ const DocumentButton = ({ label, path }) => (
         variant="outlined"
         size="small"
         startIcon={<ViewIcon sx={{ fontSize: '16px' }} />}
-        onClick={() => window.open(`http://localhost:8080/uploads/employees/${path}`, '_blank')}
+        onClick={() => window.open(`http://localhost:8080/uploads/${path}`, '_blank')}
         sx={{
             borderRadius: '8px',
             borderColor: '#E5E7EB',

@@ -160,11 +160,8 @@ public class TruckService {
     }
 
     private String generateTruckCode(UUID companyId, UUID branchId) {
-        if (companyId == null) {
-            return "TRK-" + UUID.randomUUID().toString().substring(0, 8);
-        }
         String prefix = "TRK-";
-        String maxCode = truckRepository.findMaxTruckCodeByPrefix(prefix, companyId, branchId);
+        String maxCode = truckRepository.findMaxTruckCodeByPrefix(prefix);
 
         int nextId = 1;
         if (maxCode != null) {

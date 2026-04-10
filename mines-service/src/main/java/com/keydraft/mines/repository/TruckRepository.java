@@ -13,6 +13,6 @@ public interface TruckRepository extends JpaRepository<Truck, UUID>, JpaSpecific
     boolean existsByTruckNo(String truckNo);
     Optional<Truck> findByTruckNo(String truckNo);
     
-    @org.springframework.data.jpa.repository.Query("SELECT MAX(t.truckCode) FROM Truck t WHERE t.truckCode LIKE :prefix% AND t.company.id = :companyId AND (:branchId IS NULL OR t.branch.id = :branchId)")
-    String findMaxTruckCodeByPrefix(@org.springframework.data.repository.query.Param("prefix") String prefix, @org.springframework.data.repository.query.Param("companyId") UUID companyId, @org.springframework.data.repository.query.Param("branchId") UUID branchId);
+    @org.springframework.data.jpa.repository.Query("SELECT MAX(t.truckCode) FROM Truck t WHERE t.truckCode LIKE :prefix%")
+    String findMaxTruckCodeByPrefix(@org.springframework.data.repository.query.Param("prefix") String prefix);
 }
