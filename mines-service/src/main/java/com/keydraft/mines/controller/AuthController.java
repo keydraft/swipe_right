@@ -46,7 +46,7 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> changePassword(
             @RequestBody Map<String, String> request,
             @AuthenticationPrincipal User user) {
-        
+
         String newPassword = request.get("newPassword");
         if (newPassword == null || newPassword.length() < 6) {
             return ResponseEntity.badRequest().body(ApiResponse.error(null, "Password must be at least 6 characters"));
@@ -83,11 +83,13 @@ public class AuthController {
     }
 
     private void setCookie(HttpServletResponse response, String token, int maxAge) {
-        Cookie cookie = new Cookie("jwt", token);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(false); // Set to true for production with HTTPS
-        cookie.setPath("/");
-        cookie.setMaxAge(maxAge);
-        response.addCookie(cookie);
+        org.springframework.http.ResponseCookie cookie = org.springframework.http.ResponseCookie.from("jwt", token)
+                .httpOnly(true)
+                .secure(true)    // Must be true for SameSite=None
+                .path("/")
+                .maxAge(maxAge)
+                .sameSite("None") // Required for cross-site (Vercel -> Render)
+                .build();
+        response.addHeader(org.springframework.http.HttpHeaders.SET_COOKIE, cookie.toString());
     }
 }
