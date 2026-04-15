@@ -8,70 +8,26 @@ import { useApp } from "@/context/AppContext";
 import { adminApi } from "@/services/api";
 
 export default function DashboardPage() {
-    const { user, selectedCompany, selectedBranch, updateSelectedCompany, updateSelectedBranch } = useApp();
+    const { user: globalUser, selectedCompany, selectedBranch, updateSelectedCompany, updateSelectedBranch } = useApp();
     const [companies, setCompanies] = React.useState([]);
-    const [branches, setBranches] = React.useState([]);
-
-    const userRole = (user?.roleName || user?.role || "").toUpperCase();
-    const isPowerUser = ['ADMIN', 'ROLE_ADMIN', 'PARTNER', 'ROLE_PARTNER', 'MANAGER', 'ROLE_MANAGER'].includes(userRole);
 
     React.useEffect(() => {
-        if (user && user.companies) {
-            setCompanies(user.companies);
-        }
-    }, [user]);
-
-    React.useEffect(() => {
-        const loadBranches = async () => {
-            if (selectedCompany) {
-                const coId = selectedCompany.companyId || selectedCompany.id;
-                
-                // For Partners/Admins, fetch ALL branches
-                if (isPowerUser) {
-                    try {
-                        const response = await adminApi.getBranches(coId);
-                        if (response.success) {
-                            setBranches(response.data);
-                            // Default to 0th branch if none selected or company changed
-                            if (response.data.length > 0 && (!selectedBranch || !response.data.find(b => (b.id || b.branchId) === (selectedBranch.id || selectedBranch.branchId)))) {
-                                updateSelectedBranch(response.data[0]);
-                            }
-                        }
-                    } catch (error) {
-                        console.error("Error fetching branches:", error);
+        if (globalUser) {
+            if (globalUser.role === 'ADMIN' || globalUser.roleName === 'ADMIN') {
+                adminApi.getCompanies(0, 500).then(res => setCompanies(res.data?.content || res.content || res));
+            } else if (globalUser.companies) {
+                const uniqueCompanies = [];
+                const seen = new Set();
+                globalUser.companies.forEach(c => {
+                    if (!seen.has(c.companyId)) {
+                        seen.add(c.companyId);
+                        uniqueCompanies.push({ id: c.companyId, name: c.companyName });
                     }
-                } else {
-                    // For other roles, just use what's in the profile
-                    const profileBranches = user?.companies
-                        ?.filter(c => c.companyId === coId && c.branchId)
-                        .map(c => ({ id: c.branchId, name: c.branchName }));
-                    const branchList = profileBranches || [];
-                    setBranches(branchList);
-
-                    // Default to 0th branch for non-power users too
-                    if (branchList.length > 0 && (!selectedBranch || !branchList.find(b => (b.id || b.branchId) === (selectedBranch.id || selectedBranch.branchId)))) {
-                        updateSelectedBranch(branchList[0]);
-                    }
-                }
-            } else {
-                setBranches([]);
+                });
+                setCompanies(uniqueCompanies);
             }
-        };
-
-        loadBranches();
-    }, [selectedCompany, user, isPowerUser]);
-
-    const handleCompanyChange = (e) => {
-        const coId = e.target.value;
-        const companyObj = companies.find(c => c.companyId === coId);
-        updateSelectedCompany(companyObj);
-    };
-
-    const handleBranchChange = (e) => {
-        const brId = e.target.value;
-        const branchObj = branches.find(b => (b.id || b.branchId) === brId);
-        updateSelectedBranch(branchObj || null);
-    };
+        }
+    }, [globalUser]);
 
     const stats = [
         { title: "Total Sales", value: "$24,500", diff: "+12%", isPositive: true },
@@ -88,43 +44,81 @@ export default function DashboardPage() {
                         Dashboard
                     </Typography>
                     <Typography variant="body1" sx={{ color: palette.text.secondary }}>
-                        Welcome back, {user?.firstName || user?.username || "User"}! Here is what's happening today.
+                        Welcome back, {globalUser?.firstName || globalUser?.username || "User"}! Here is what's happening today.
                     </Typography>
                 </Box>
 
-                {isPowerUser && companies.length > 0 && (
-                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                {/* Site Switcher Moved Here */}
+                <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'flex-end', 
+                    gap: 1.5,
+                    p: 2,
+                    backgroundColor: '#fff',
+                    borderRadius: '16px',
+                    boxShadow: '0 4px 20px rgba(0,0,0,0.05)',
+                    border: '1px solid #F3F4F6'
+                }}>
+                    <Typography sx={{ fontSize: '11px', fontWeight: 800, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Site Authorization</Typography>
+                    <Box sx={{ display: 'flex', gap: 1.5 }}>
                         <FormControl size="small" sx={{ minWidth: 200 }}>
-                            <InputLabel id="company-select-label">Select Company</InputLabel>
+                            <InputLabel id="company-select-label">Company</InputLabel>
                             <Select
                                 labelId="company-select-label"
-                                value={selectedCompany?.companyId || ""}
-                                label="Select Company"
-                                onChange={handleCompanyChange}
-                                sx={{ borderRadius: '12px', bgcolor: '#fff' }}
+                                label="Company"
+                                value={selectedCompany?.id || selectedCompany?.companyId || ""}
+                                onChange={(e) => {
+                                    const co = companies.find(c => (c.id || c.companyId) === e.target.value);
+                                    updateSelectedCompany(co || null);
+                                }}
+                                sx={{ borderRadius: '10px', backgroundColor: '#F9FAFB' }}
                             >
-                                {[...new Map(companies.map(item => [item.companyId, item])).values()].map((c) => (
-                                    <MenuItem key={c.companyId} value={c.companyId}>{c.companyName}</MenuItem>
+                                <MenuItem value=""><em>None</em></MenuItem>
+                                {companies.map(c => (
+                                    <MenuItem key={c.id || c.companyId} value={c.id || c.companyId}>
+                                        {c.name || c.companyName}
+                                    </MenuItem>
                                 ))}
                             </Select>
                         </FormControl>
 
-                        <FormControl size="small" sx={{ minWidth: 200 }}>
-                            <InputLabel id="branch-select-label">All Branches</InputLabel>
+                        <FormControl size="small" sx={{ minWidth: 200 }} disabled={!selectedCompany}>
+                            <InputLabel id="branch-select-label">Branch</InputLabel>
                             <Select
                                 labelId="branch-select-label"
-                                value={selectedBranch?.id || selectedBranch?.branchId || ""}
                                 label="Branch"
-                                onChange={handleBranchChange}
-                                sx={{ borderRadius: '12px', bgcolor: '#fff' }}
+                                value={selectedBranch?.id || selectedBranch?.branchId || ""}
+                                onChange={(e) => {
+                                    const availableBranches = (globalUser?.role === 'ADMIN' || globalUser?.roleName === 'ADMIN')
+                                        ? selectedCompany?.branches || []
+                                        : globalUser?.companies?.filter(c => (c.companyId === (selectedCompany?.id || selectedCompany?.companyId))) || [];
+                                    
+                                    const entry = availableBranches.find(b => (b.id || b.branchId) === e.target.value);
+                                    if (entry) {
+                                        updateSelectedBranch({
+                                            id: entry.id || entry.branchId,
+                                            name: entry.name || entry.branchName
+                                        });
+                                    } else {
+                                        updateSelectedBranch(null);
+                                    }
+                                }}
+                                sx={{ borderRadius: '10px', backgroundColor: '#F9FAFB' }}
                             >
-                                {branches.map((b) => (
-                                    <MenuItem key={b.id || b.branchId} value={b.id || b.branchId}>{b.name || b.branchName}</MenuItem>
+                                <MenuItem value=""><em>None</em></MenuItem>
+                                {( (globalUser?.role === 'ADMIN' || globalUser?.roleName === 'ADMIN') 
+                                    ? selectedCompany?.branches || [] 
+                                    : globalUser?.companies?.filter(c => (c.companyId === (selectedCompany?.id || selectedCompany?.companyId))) || []
+                                ).map(b => (
+                                    <MenuItem key={b.id || b.branchId} value={b.id || b.branchId}>
+                                        {b.name || b.branchName}
+                                    </MenuItem>
                                 ))}
                             </Select>
                         </FormControl>
                     </Box>
-                )}
+                </Box>
             </Box>
 
             <Grid container spacing={4}>

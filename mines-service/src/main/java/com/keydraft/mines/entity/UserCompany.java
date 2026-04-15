@@ -6,7 +6,7 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "user_companies",
-       uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "company_id"}))
+       uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "company_id", "branch_id"}))
 @Getter
 @Setter
 @NoArgsConstructor

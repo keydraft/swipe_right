@@ -1,11 +1,11 @@
 package com.keydraft.mines.service;
 
 import com.keydraft.mines.dto.*;
-import com.keydraft.mines.entity.Transporter;
-import com.keydraft.mines.entity.Address;
+import com.keydraft.mines.entity.*;
 import com.keydraft.mines.repository.BranchRepository;
 import com.keydraft.mines.repository.CompanyRepository;
 import com.keydraft.mines.repository.TransporterRepository;
+import com.keydraft.mines.repository.TransporterAssignmentRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 public class TransporterService {
 
     private final TransporterRepository transporterRepository;
+    private final TransporterAssignmentRepository assignmentRepository;
     private final CompanyRepository companyRepository;
     private final BranchRepository branchRepository;
 
@@ -36,15 +37,11 @@ public class TransporterService {
                     .orElseThrow(() -> new RuntimeException("Transporter not found"));
         } else {
             transporter = new Transporter();
-            if (request.getCompanyId() != null) {
-                transporter.setCompany(companyRepository.findById(request.getCompanyId())
-                        .orElseThrow(() -> new RuntimeException("Company not found")));
+            if (request.getICode() != null && !request.getICode().isEmpty()) {
+                transporter.setICode(request.getICode());
+            } else {
+                transporter.setICode(generateTransporterCode());
             }
-            if (request.getBranchId() != null) {
-                transporter.setBranch(branchRepository.findById(request.getBranchId())
-                        .orElseThrow(() -> new RuntimeException("Branch not found")));
-            }
-            transporter.setICode(generateTransporterCode(request.getCompanyId(), request.getBranchId()));
         }
 
         transporter.setName(request.getName());
@@ -65,20 +62,79 @@ public class TransporterService {
         return mapToResponse(saved);
     }
 
+    @Transactional
+    public TransporterAssignmentResponse assignToBranch(TransporterAssignmentRequest request) {
+        if (assignmentRepository.existsByTransporterIdAndBranchId(request.getTransporterId(), request.getBranchId())) {
+            throw new RuntimeException("Transporter already assigned to this branch");
+        }
+
+        Transporter transporter = transporterRepository.findById(request.getTransporterId())
+                .orElseThrow(() -> new RuntimeException("Transporter not found"));
+        Company company = companyRepository.findById(request.getCompanyId())
+                .orElseThrow(() -> new RuntimeException("Company not found"));
+        Branch branch = branchRepository.findById(request.getBranchId())
+                .orElseThrow(() -> new RuntimeException("Branch not found"));
+
+        TransporterAssignment assignment = TransporterAssignment.builder()
+                .transporter(transporter)
+                .company(company)
+                .branch(branch)
+                .build();
+
+        TransporterAssignment saved = assignmentRepository.save(assignment);
+        return mapToAssignmentResponse(saved);
+    }
+
+    @Transactional
+    public void removeAssignment(UUID assignmentId) {
+        assignmentRepository.deleteById(assignmentId);
+    }
+
+    public List<TransporterAssignmentResponse> getAssignments(UUID transporterId) {
+        return assignmentRepository.findByTransporterId(transporterId).stream()
+                .map(this::mapToAssignmentResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<TransporterResponse> getTransportersForBranch(UUID branchId) {
+        return assignmentRepository.findByBranchId(branchId).stream()
+                .map(as -> mapToResponse(as.getTransporter()))
+                .collect(Collectors.toList());
+    }
+
     public List<TransporterResponse> getAllTransportersList() {
         return transporterRepository.findAll().stream().map(this::mapToResponse).collect(Collectors.toList());
     }
 
-    public PaginatedResponse<TransporterResponse> getAllTransporters(String search, Pageable pageable) {
+    public PaginatedResponse<TransporterResponse> getAllTransporters(String search, UUID companyId, UUID branchId, Pageable pageable) {
         Specification<Transporter> spec = (root, query, cb) -> {
-            if (search == null || search.isEmpty()) {
-                return cb.conjunction();
+            java.util.List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+            
+            if (search != null && !search.isEmpty()) {
+                String pattern = "%" + search.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        cb.like(cb.lower(root.get("iCode")), pattern),
+                        cb.like(cb.lower(root.get("phone")), pattern)));
             }
-            String pattern = "%" + search.toLowerCase() + "%";
-            return cb.or(
-                    cb.like(cb.lower(root.get("name")), pattern),
-                    cb.like(cb.lower(root.get("iCode")), pattern),
-                    cb.like(cb.lower(root.get("phone")), pattern));
+
+            if (branchId != null) {
+                // Check assignments for this branch
+                jakarta.persistence.criteria.Subquery<UUID> subquery = query.subquery(UUID.class);
+                jakarta.persistence.criteria.Root<TransporterAssignment> assignmentRoot = subquery.from(TransporterAssignment.class);
+                subquery.select(assignmentRoot.get("transporter").get("id"))
+                        .where(cb.equal(assignmentRoot.get("branch").get("id"), branchId));
+                predicates.add(root.get("id").in(subquery));
+            } else if (companyId != null) {
+                // Check assignments for this company
+                jakarta.persistence.criteria.Subquery<UUID> subquery = query.subquery(UUID.class);
+                jakarta.persistence.criteria.Root<TransporterAssignment> assignmentRoot = subquery.from(TransporterAssignment.class);
+                subquery.select(assignmentRoot.get("transporter").get("id"))
+                        .where(cb.equal(assignmentRoot.get("company").get("id"), companyId));
+                predicates.add(root.get("id").in(subquery));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
         Page<Transporter> page = transporterRepository.findAll(spec, pageable);
@@ -96,16 +152,17 @@ public class TransporterService {
                 .build();
     }
 
+    @Transactional
     public void deleteTransporter(UUID id) {
+        // Delete assignments first
+        List<TransporterAssignment> assignments = assignmentRepository.findByTransporterId(id);
+        assignmentRepository.deleteAll(assignments);
         transporterRepository.deleteById(id);
     }
 
-    private String generateTransporterCode(UUID companyId, UUID branchId) {
-        if (companyId == null) {
-            return "T-" + UUID.randomUUID().toString().substring(0, 8);
-        }
+    private String generateTransporterCode() {
         String prefix = "T";
-        String maxCode = transporterRepository.findMaxTransporterCodeByPrefix(prefix, companyId, branchId);
+        String maxCode = transporterRepository.findMaxTransporterCodeByPrefix(prefix);
 
         int nextId = 1;
         if (maxCode != null) {
@@ -120,6 +177,10 @@ public class TransporterService {
     }
 
     private TransporterResponse mapToResponse(Transporter t) {
+        List<TransporterAssignmentResponse> assignments = assignmentRepository.findByTransporterId(t.getId()).stream()
+                .map(this::mapToAssignmentResponse)
+                .collect(Collectors.toList());
+
         return TransporterResponse.builder()
                 .id(t.getId())
                 .iCode(t.getICode())
@@ -133,10 +194,20 @@ public class TransporterService {
                         .state(t.getAddress().getState())
                         .pincode(t.getAddress().getPincode())
                         .build() : null)
-                .companyId(t.getCompany() != null ? t.getCompany().getId() : null)
-                .companyName(t.getCompany() != null ? t.getCompany().getName() : null)
-                .branchId(t.getBranch() != null ? t.getBranch().getId() : null)
-                .branchName(t.getBranch() != null ? t.getBranch().getName() : null)
+                .assignments(assignments)
+                .build();
+    }
+
+    private TransporterAssignmentResponse mapToAssignmentResponse(TransporterAssignment as) {
+        return TransporterAssignmentResponse.builder()
+                .id(as.getId())
+                .transporterId(as.getTransporter().getId())
+                .transporterName(as.getTransporter().getName())
+                .companyId(as.getCompany().getId())
+                .companyName(as.getCompany().getName())
+                .branchId(as.getBranch().getId())
+                .branchName(as.getBranch().getName())
+                .active(as.isActive())
                 .build();
     }
 }

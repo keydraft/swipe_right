@@ -14,16 +14,14 @@ import {
 } from "@mui/icons-material";
 import { palette } from "@/theme";
 import { productApi, adminApi } from "@/services/api";
-import { useFormik } from "formik";
+import { useApp } from "@/context/AppContext";
 import * as Yup from "yup";
-import Cookies from "js-cookie";
+import { useFormik } from "formik";
 
 export default function ProductPage() {
-    const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
-    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
-    const associations = user.companies || [];
-    const defaultCompanyId = associations.length > 0 ? associations[0].companyId : "";
-    const defaultBranchId = associations.length > 0 ? associations[0].branchId : "";
+    const { selectedCompany, user } = useApp();
+    const userRole = user?.roleName || user?.role || "";
+    const associations = user?.companies || [];
 
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
@@ -90,7 +88,8 @@ export default function ProductPage() {
 
     const fetchProducts = async () => {
         try {
-            const response = await productApi.getAll(page, rowsPerPage, searchQuery);
+            const companyId = selectedCompany?.id || selectedCompany?.companyId || null;
+            const response = await productApi.getAll(page, rowsPerPage, searchQuery, companyId);
             if (response.success) {
                 setProducts(response.data.content);
                 setTotalElements(response.data.totalElements);
@@ -105,11 +104,15 @@ export default function ProductPage() {
     }, []);
 
     useEffect(() => {
+        setPage(0);
+    }, [selectedCompany]);
+
+    useEffect(() => {
         const timer = setTimeout(() => {
             fetchProducts();
         }, 300);
         return () => clearTimeout(timer);
-    }, [page, rowsPerPage, searchQuery]);
+    }, [page, rowsPerPage, searchQuery, selectedCompany]);
 
     const handleChangePage = (event, newPage) => {
         setPage(newPage);
@@ -177,7 +180,7 @@ export default function ProductPage() {
         } else {
             // Non-admin roles (MANAGER, SITEOPERATOR, etc.)
             if (associations.length > 0) {
-                initialCompanyId = defaultCompanyId;
+                initialCompanyId = associations[0]?.companyId || "";
                 initialBranchPrices = associations
                     .filter(assoc => assoc.branchId) // Only show specific assigned branches
                     .map(assoc => ({

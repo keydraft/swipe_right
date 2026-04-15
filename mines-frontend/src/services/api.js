@@ -61,9 +61,9 @@ export const authApi = {
 };
 
 export const productApi = {
-  getAll: async (page = 0, size = 10, search = "") => {
+  getAll: async (page = 0, size = 10, search = "", companyId = null) => {
     const response = await api.get("/products", {
-      params: { page, size, search }
+      params: { page, size, search, companyId }
     });
     return response.data;
   },
@@ -116,6 +116,18 @@ export const employeeApi = {
   delete: async (id) => {
     const response = await api.delete(`/employees/${id}`);
     return response.data;
+  },
+
+  transfer: async (id, targetBranchId, transferDate) => {
+    const response = await api.post(`/employees/${id}/transfer`, null, {
+      params: { targetBranchId, transferDate }
+    });
+    return response.data;
+  },
+
+  getHistory: async (id) => {
+    const response = await api.get(`/employees/${id}/history`);
+    return response.data;
   }
 };
 
@@ -149,9 +161,9 @@ export const adminApi = {
 };
 
 export const customerApi = {
-  getAll: async (page = 0, size = 10, search = "") => {
+  getAll: async (page = 0, size = 10, search = "", companyId = null, branchId = null) => {
     const response = await api.get("/customers", {
-      params: { page, size, search }
+      params: { page, size, search, companyId, branchId }
     });
     return response.data;
   },
@@ -168,9 +180,9 @@ export const customerApi = {
 };
 
 export const transporterApi = {
-  getAll: async (page = 0, size = 10, search = "") => {
+  getAll: async (page = 0, size = 10, search = "", companyId = null, branchId = null) => {
     const response = await api.get("/transporters", {
-      params: { page, size, search }
+      params: { page, size, search, companyId, branchId }
     });
     return response.data;
   },
@@ -183,20 +195,36 @@ export const transporterApi = {
   delete: async (id) => {
     const response = await api.delete(`/transporters/${id}`);
     return response.data;
+  },
+  assign: async (assignmentData) => {
+    const response = await api.post("/transporters/assign", assignmentData);
+    return response.data;
+  },
+  removeAssignment: async (assignmentId) => {
+    const response = await api.delete(`/transporters/assignments/${assignmentId}`);
+    return response.data;
+  },
+  getAssignments: async (transporterId) => {
+    const response = await api.get(`/transporters/${transporterId}/assignments`);
+    return response.data;
+  },
+  getByBranch: async (branchId) => {
+    const response = await api.get(`/transporters/branch/${branchId}`);
+    return response.data;
   }
 };
 
 export const truckApi = {
-  getAll: async (page = 0, size = 10, search = "") => {
+  getAll: async (page = 0, size = 10, search = "", companyId = null, branchId = null) => {
     const response = await api.get("/trucks", {
-      params: { page, size, search }
+      params: { page, size, search, companyId, branchId }
     });
     return response.data;
   },
   upsert: async (truckData, files = {}, id = null) => {
     const formData = new FormData();
     formData.append("truck", JSON.stringify(truckData));
-    
+
     if (files.rcFront) formData.append("rcFront", files.rcFront);
     if (files.rcBack) formData.append("rcBack", files.rcBack);
     if (files.insurance) formData.append("insurance", files.insurance);
@@ -213,6 +241,18 @@ export const truckApi = {
   },
   delete: async (id) => {
     const response = await api.delete(`/trucks/${id}`);
+    return response.data;
+  },
+  assign: async (assignmentData) => {
+    const response = await api.post("/trucks/assign", assignmentData);
+    return response.data;
+  },
+  removeAssignment: async (assignmentId) => {
+    const response = await api.delete(`/trucks/assignments/${assignmentId}`);
+    return response.data;
+  },
+  getByBranch: async (branchId) => {
+    const response = await api.get(`/trucks/branch/${branchId}`);
     return response.data;
   }
 };

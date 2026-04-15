@@ -6,7 +6,7 @@ import { NotificationsOutlined, SettingsOutlined, Logout } from "@mui/icons-mate
 import Sidebar from "./Sidebar";
 import { palette } from "@/theme";
 import { useRouter } from "next/navigation";
-import { authApi } from "@/services/api";
+import { authApi, adminApi } from "@/services/api";
 
 import Cookies from "js-cookie";
 import { ability, defineAbilitiesFor } from "@/utils/ability";
@@ -51,8 +51,13 @@ export default function DashboardLayout({ children }) {
     return (
         <Box sx={{ display: "flex", minHeight: "100vh", backgroundColor: palette.background.paper }}>
             <Sidebar />
-            <Box
-                component="main"
+            {loading ? (
+                <Box sx={{ flexGrow: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                    <Typography>Loading...</Typography>
+                </Box>
+            ) : (
+                <Box
+                    component="main"
                 sx={{
                     flexGrow: 1,
                     width: { sm: `calc(100% - 280px)` },
@@ -66,11 +71,14 @@ export default function DashboardLayout({ children }) {
                     height: "70px",
                     backgroundColor: "#FFFFFF",
                     display: "flex",
-                    justifyContent: "flex-end",
+                    justifyContent: "space-between",
                     alignItems: "center",
                     px: 4,
                     boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.02)"
                 }}>
+                    {/* Site Switcher */}
+                    <Box />
+
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <IconButton>
                             <Badge variant="dot" color="error" sx={{ '& .MuiBadge-badge': { right: 6, top: 6, backgroundColor: '#EF4444' } }}>
@@ -163,6 +171,7 @@ export default function DashboardLayout({ children }) {
                     {children}
                 </Box>
             </Box>
-        </Box>
-    );
+        )}
+    </Box>
+);
 }

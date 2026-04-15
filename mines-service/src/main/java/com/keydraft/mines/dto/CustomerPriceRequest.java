@@ -10,6 +10,8 @@ import java.util.UUID;
 @AllArgsConstructor
 public class CustomerPriceRequest {
     private UUID productId;
+    private UUID companyId;
+    private UUID branchId;
     private Double rate;
     private Double cashRate;
     private Double creditRate;

@@ -18,4 +18,5 @@ public interface EmployeeRepository extends JpaRepository<Employee, UUID>, JpaSp
     long countByBranch(Branch branch);
     List<Employee> findByActiveTrue();
     Optional<Employee> findTopByOrderByEmployeeCodeDesc();
+    Optional<Employee> findTopByEmployeeCodeStartingWithOrderByEmployeeCodeDesc(String prefix);
 }

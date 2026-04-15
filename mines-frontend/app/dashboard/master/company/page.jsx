@@ -62,18 +62,34 @@ export default function CompanyPage() {
         }
     };
 
-    // Initial fetch
+    // Single combined fetch effect
     useEffect(() => {
-        fetchCompanies();
-        setIsInitialized(true);
-    }, []);
+        let isMounted = true;
+        const timer = setTimeout(async () => {
+            if (!isMounted) return;
+            setIsLoading(true);
+            try {
+                const response = await adminApi.getCompanies(page, rowsPerPage, searchQuery || "");
+                if (response.success && isMounted) {
+                    setCompanies(response.data.content || []);
+                    setTotalElements(response.data.totalElements || 0);
+                }
+            } catch (error) {
+                console.error("Error fetching companies:", error);
+                if (isMounted) {
+                    setSnackbar({ open: true, message: "Failed to load company list", severity: "error" });
+                }
+            } finally {
+                if (isMounted) setIsLoading(false);
+            }
+        }, isInitialized ? 300 : 0); // No debounce on very first load
 
-    // Fetch on page/search change
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            fetchCompanies();
-        }, 300);
-        return () => clearTimeout(timer);
+        if (!isInitialized) setIsInitialized(true);
+
+        return () => {
+            isMounted = false;
+            clearTimeout(timer);
+        };
     }, [page, rowsPerPage, searchQuery]);
 
     const initialBranchState = {
@@ -96,16 +112,60 @@ export default function CompanyPage() {
         branches: []
     };
 
+    const FIELD_LIMITS = {
+        name: 30,
+        invoiceInitial: 5,
+        gstn: 15,
+        addressLine1: 50,
+        addressLine2: 50,
+        district: 50,
+        state: 50,
+        pincode: 6,
+        phone: 10,
+        alternatePhone: 10,
+        emailId: 50,
+        accountName: 50,
+        shortName: 20,
+        accountNumber: 18,
+        bankName: 50,
+        branchName: 100,
+        ifscCode: 11,
+        openingBalance: 15
+    };
+
     const companyValidationSchema = Yup.object({
-        name: Yup.string().required("Company name is required"),
-        invoiceInitial: Yup.string().required("Invoice initial is required"),
-        gstn: Yup.string().matches(gstinRegex, "Invalid GSTIN format").required("GSTN is required"),
-        addressLine1: Yup.string().max(50, "Address cannot exceed 50 characters").required("Address is required"),
-        district: Yup.string().required("District is required"),
-        state: Yup.string().required("State is required"),
-        pincode: Yup.string().matches(pincodeRegex, "Pincode must be 6 digits").required("Pincode is required"),
-        phone: Yup.string().matches(phoneRegex, "Phone must be 10-12 digits").required("Phone is required"),
-        emailId: Yup.string().email("Invalid email format"),
+        name: Yup.string()
+            .max(FIELD_LIMITS.name, `Company name cannot exceed ${FIELD_LIMITS.name} characters`)
+            .required("Company name is required"),
+        invoiceInitial: Yup.string()
+            .max(FIELD_LIMITS.invoiceInitial, `Invoice initial cannot exceed ${FIELD_LIMITS.invoiceInitial} characters`)
+            .required("Invoice initial is required"),
+        gstn: Yup.string()
+            .matches(gstinRegex, "Invalid GSTIN format")
+            .max(FIELD_LIMITS.gstn, `GSTN must be ${FIELD_LIMITS.gstn} characters`)
+            .required("GSTN is required"),
+        addressLine1: Yup.string()
+            .max(FIELD_LIMITS.addressLine1, `Address cannot exceed ${FIELD_LIMITS.addressLine1} characters`)
+            .required("Address is required"),
+        addressLine2: Yup.string()
+            .max(FIELD_LIMITS.addressLine2, `Address cannot exceed ${FIELD_LIMITS.addressLine2} characters`),
+        district: Yup.string()
+            .max(FIELD_LIMITS.district, `District cannot exceed ${FIELD_LIMITS.district} characters`)
+            .required("District is required"),
+        state: Yup.string()
+            .max(FIELD_LIMITS.state, `State cannot exceed ${FIELD_LIMITS.state} characters`)
+            .required("State is required"),
+        pincode: Yup.string()
+            .matches(pincodeRegex, "Pincode must be 6 digits")
+            .required("Pincode is required"),
+        phone: Yup.string()
+            .matches(/^[0-9]{10}$/, "Phone must be 10 digits")
+            .required("Phone is required"),
+        alternatePhone: Yup.string()
+            .matches(/^[0-9]{10}$/, "Phone must be 10 digits"),
+        emailId: Yup.string()
+            .email("Invalid email format")
+            .max(FIELD_LIMITS.emailId, `Email cannot exceed ${FIELD_LIMITS.emailId} characters`),
     });
 
     const formik = useFormik({
@@ -278,13 +338,7 @@ export default function CompanyPage() {
         setPage(0);
     };
 
-    const filteredCompanies = companies.filter(company =>
-        (company.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (company.gstin || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (company.address?.district || "").toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    const paginatedCompanies = filteredCompanies.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+    const displayCompanies = companies;
 
     const handleViewCompany = (index) => {
         setSelectedCompany(companies[index]);
@@ -355,8 +409,12 @@ export default function CompanyPage() {
             setSnackbar({ open: true, message: "Please fill in the required fields: Branch Name, Branch Category, Contact No, Address Line 1, District, State, and Pincode.", severity: "error" });
             return;
         }
-        if (!phoneRegex.test(currentBranch.contactNo)) {
-            setSnackbar({ open: true, message: "Contact No must be 10 to 12 digits.", severity: "error" });
+        if (!/^[0-9]{10}$/.test(currentBranch.contactNo)) {
+            setSnackbar({ open: true, message: "Contact No must be exactly 10 digits.", severity: "error" });
+            return;
+        }
+        if (currentBranch.alternateNo && !/^[0-9]{10}$/.test(currentBranch.alternateNo)) {
+            setSnackbar({ open: true, message: "Alternate No must be exactly 10 digits.", severity: "error" });
             return;
         }
         if (!pincodeRegex.test(currentBranch.pincode)) {
@@ -393,7 +451,7 @@ export default function CompanyPage() {
             return;
         }
         if (!/^[0-9]{9,18}$/.test(currentBankAccount.accountNumber)) {
-            setSnackbar({ open: true, message: "Account Number must be 9-18 digits.", severity: "error" });
+            setSnackbar({ open: true, message: "Account Number must be between 9 and 18 digits.", severity: "error" });
             return;
         }
         if (!ifscRegex.test(currentBankAccount.ifscCode)) {
@@ -536,27 +594,36 @@ export default function CompanyPage() {
                         variant="outlined"
                         value={value}
                         onChange={(e) => {
-                            const letterOnlyFields = ['name', 'district', 'state', 'branch', 'bankName'];
+                            const letterOnlyFields = ['district', 'state'];
+                            const alphaNumericFields = ['name', 'invoiceInitial', 'branch', 'bankName'];
                             const numericOnlyFields = ['phone', 'alternatePhone', 'pincode'];
-                            const uppercaseFields = ['gstn'];
                             
-                            if (letterOnlyFields.includes(name)) {
-                                const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
-                                formik.setFieldValue(name, val);
-                            } else if (numericOnlyFields.includes(name)) {
-                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                formik.setFieldValue(name, val);
-                            } else if (uppercaseFields.includes(name)) {
-                                const val = e.target.value.toUpperCase();
-                                formik.setFieldValue(name, val);
-                            } else {
-                                formik.handleChange(e);
+                            let val = e.target.value;
+                            const limit = FIELD_LIMITS[name] || (name.includes('addressLine') ? 100 : 255);
+                            
+                            // Enforce strict character limit by slicing
+                            if (val.length > limit) val = val.slice(0, limit);
+
+                            // Convert to uppercase (except email)
+                            if (name !== 'emailId') {
+                                val = val.toUpperCase();
                             }
+
+                            if (letterOnlyFields.includes(name)) {
+                                val = val.replace(/[^A-Z\s]/g, '');
+                            } else if (alphaNumericFields.includes(name)) {
+                                val = val.replace(/[^A-Z0-9\s&.-]/g, '');
+                            } else if (numericOnlyFields.includes(name)) {
+                                val = val.replace(/[^0-9]/g, '');
+                            }
+                            formik.setFieldValue(name, val);
                         }}
                         onBlur={formik.handleBlur}
                         error={!!error}
                         helperText={error}
-                        inputProps={name.includes('addressLine') ? { maxLength: 50 } : {}}
+                        inputProps={{ 
+                            maxLength: FIELD_LIMITS[name] || (name.includes('addressLine') ? 100 : 255)
+                        }}
                         sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
                     />
                 )}
@@ -611,24 +678,53 @@ export default function CompanyPage() {
                         placeholder={placeholder}
                         value={value}
                         onChange={(e) => {
-                            const letterLabels = ["Name", "State", "District", "Branch Name", "Bank Name", "Account Name"];
-                            const numericLabels = ["Contact No", "Pincode", "Account No", "Alternate No"];
-                            const uppercaseLabels = ["IFSC", "GSTN"];
+                            const letterLabels = ["State", "District"];
+                            const alphaNumericLabels = ["Name", "Branch Name", "Bank Name", "Account Name"];
+                            const numericLabels = ["Contact No", "Pincode", "Account No", "Alternate No", "Opening Balance"];
                             
-                            if (letterLabels.some(l => label.includes(l))) {
-                                const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
-                                onChange(val);
-                            } else if (numericLabels.some(l => label.includes(l))) {
-                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                onChange(val);
-                            } else if (uppercaseLabels.some(l => label.includes(l))) {
-                                const val = e.target.value.toUpperCase();
-                                onChange(val);
-                            } else {
-                                onChange(e.target.value);
+                            let val = e.target.value;
+                            let limit = 255;
+                            if (label.includes('Name')) limit = FIELD_LIMITS.name;
+                            else if (label.includes('Address')) limit = FIELD_LIMITS.addressLine1;
+                            else if (label.includes('District') || label.includes('State')) limit = FIELD_LIMITS.state;
+                            else if (label.includes('No') || label.includes('Contact')) limit = label.includes('Account') ? FIELD_LIMITS.accountNumber : FIELD_LIMITS.phone;
+                            else if (label.includes('Pincode')) limit = FIELD_LIMITS.pincode;
+                            else if (label.includes('IFSC')) limit = FIELD_LIMITS.ifscCode;
+                            else if (label.includes('Short Name')) limit = FIELD_LIMITS.shortName;
+                            else if (label.includes('Balance')) limit = FIELD_LIMITS.openingBalance;
+
+                            // Enforce strict character limit by slicing
+                            if (val.length > limit) val = val.slice(0, limit);
+
+                            // Convert to uppercase (except email)
+                            if (!label.toLowerCase().includes("email")) {
+                                val = val.toUpperCase();
                             }
+
+                            if (letterLabels.some(l => label.includes(l))) {
+                                val = val.replace(/[^A-Z\s]/g, '');
+                            } else if (alphaNumericLabels.some(l => label.includes(l))) {
+                                val = val.replace(/[^A-Z0-9\s&.-]/g, '');
+                            } else if (label.includes("Balance")) {
+                                val = val.replace(/[^0-9.]/g, '');
+                                // Ensure only one decimal point
+                                const parts = val.split('.');
+                                if (parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+                            } else if (numericLabels.some(l => label.includes(l))) {
+                                val = val.replace(/[^0-9]/g, '');
+                            }
+                            onChange(val);
                         }}
-                        inputProps={label.includes('Address') ? { maxLength: 50 } : {}}
+                        inputProps={{ 
+                            maxLength: label.includes('Name') ? FIELD_LIMITS.name : 
+                                     label.includes('Address') ? FIELD_LIMITS.addressLine1 : 
+                                     (label.includes('District') || label.includes('State')) ? FIELD_LIMITS.state :
+                                     (label.includes('No') || label.includes('Contact')) ? (label.includes('Account') ? FIELD_LIMITS.accountNumber : FIELD_LIMITS.phone) :
+                                     label.includes('Pincode') ? FIELD_LIMITS.pincode :
+                                     label.includes('IFSC') ? FIELD_LIMITS.ifscCode :
+                                     label.includes('Short Name') ? FIELD_LIMITS.shortName :
+                                     label.includes('Balance') ? FIELD_LIMITS.openingBalance : 255
+                        }}
                         sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB' } }}
                     />
                 )}

@@ -31,9 +31,21 @@ public class AdminService {
     private final RoleRepository roleRepository;
     private final UserCompanyRepository userCompanyRepository;
     private final BranchRepository branchRepository;
+    private final EmployeeRepository employeeRepository;
+    private final EmployeeAssignmentRepository employeeAssignmentRepository;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
     private final PermissionRepository permissionRepository;
+    private final ProductPriceRepository productPriceRepository;
+    private final SequenceNumberRepository sequenceNumberRepository;
+    private final DeliveryChallanRepository deliveryChallanRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final CustomerRepository customerRepository;
+    private final TransporterRepository transporterRepository;
+    private final TruckRepository truckRepository;
+    private final ProductRepository productRepository;
+    private final CustomerPriceRepository customerPriceRepository;
+    private final SalesOrderRepository salesOrderRepository;
 
     // ==================== MAPPING HELPERS ====================
 
@@ -208,6 +220,15 @@ public class AdminService {
             System.out.println("Processing Branches. Incoming IDs: " + incomingIds);
             System.out.println("Existing Branch IDs: " + company.getBranches().stream().map(Branch::getId).collect(Collectors.toList()));
 
+            // Before removing branches, we must detach employees
+            List<Branch> toRemove = company.getBranches().stream()
+                    .filter(b -> b.getId() != null && !incomingIds.contains(b.getId()))
+                    .collect(Collectors.toList());
+            
+            for (Branch b : toRemove) {
+                cleanupBranchRelatedData(b);
+            }
+
             company.getBranches().removeIf(b -> b.getId() != null && !incomingIds.contains(b.getId()));
 
             for (BranchRequest branchReq : request.getBranches()) {
@@ -253,9 +274,83 @@ public class AdminService {
     @Transactional
     public void deleteCompany(java.util.UUID id) {
         Company company = companyRepository.findById(id).orElseThrow(() -> new RuntimeException("No Company"));
+        
+        // 1. Cleanup all branch-related data first
+        for (Branch branch : company.getBranches()) {
+            cleanupBranchRelatedData(branch);
+        }
+
+        // 2. Cleanup company-level related data
+        userCompanyRepository.deleteByCompanyId(id);
+        productPriceRepository.deleteByCompanyId(id);
+        sequenceNumberRepository.deleteByCompanyId(id);
+        deliveryChallanRepository.deleteByCompanyId(id);
+        invoiceRepository.deleteByCompanyId(id);
+        employeeAssignmentRepository.deleteByCompanyId(id);
+        customerPriceRepository.deleteByCompanyId(id);
+        salesOrderRepository.deleteByCompanyId(id);
+        productRepository.deleteByCompanyId(id);
+
+        // Reset company references in other entities
+        customerRepository.findByCompanyId(id).forEach(c -> {
+            c.setCompany(null);
+            c.setBranch(null);
+            customerRepository.save(c);
+        });
+
+        transporterRepository.findByCompanyId(id).forEach(t -> {
+            t.setCompany(null);
+            t.setBranch(null);
+            transporterRepository.save(t);
+        });
+
+        truckRepository.findByCompanyId(id).forEach(tr -> {
+            tr.setCompany(null);
+            tr.setBranch(null);
+            truckRepository.save(tr);
+        });
+
+        // 3. Delete company (branches will be deleted by Cascade)
         companyRepository.delete(company);
         eventPublisher.publishEvent(
                 new AuditEvent("SYSTEM", "DELETE_COMPANY", "Company " + company.getName() + " deleted.", null));
+    }
+
+    private void cleanupBranchRelatedData(Branch branch) {
+        // 1. Detach all employees from this branch
+        List<Employee> employees = employeeRepository.findByBranch(branch);
+        for (Employee emp : employees) {
+            emp.setBranch(null);
+            employeeRepository.save(emp);
+        }
+
+        java.util.UUID branchId = branch.getId();
+
+        // 2. Delete history assignments that block branch deletion
+        employeeAssignmentRepository.deleteByBranchId(branchId);
+
+        // 3. Delete other related data that blocks branch deletion
+        userCompanyRepository.deleteByBranchId(branchId);
+        productPriceRepository.deleteByBranchId(branchId);
+        sequenceNumberRepository.deleteByBranchId(branchId);
+        deliveryChallanRepository.deleteByBranchId(branchId);
+        invoiceRepository.deleteByBranchId(branchId);
+
+        // Reset branch references in other entities
+        customerRepository.findByBranchId(branchId).forEach(c -> {
+            c.setBranch(null);
+            customerRepository.save(c);
+        });
+
+        transporterRepository.findByBranchId(branchId).forEach(t -> {
+            t.setBranch(null);
+            transporterRepository.save(t);
+        });
+
+        truckRepository.findByBranchId(branchId).forEach(tr -> {
+            tr.setBranch(null);
+            truckRepository.save(tr);
+        });
     }
 
     // ==================== PARTNER LINKING ====================
@@ -384,8 +479,8 @@ public class AdminService {
         }
 
         // 2. Define roles and their associated permissions
-        String[] ns = { "ADMIN", "PARTNER", "MANAGER", "ACCOUNTANT", "SITEOPERATOR", "WEIGHMENT_OPERATOR" };
-        int[] ranks = { 0, 1, 2, 3, 4, 5 };
+        String[] ns = { "ADMIN", "PARTNER", "MANAGER", "ACCOUNTANT", "OPERATOR", "SITEOPERATOR", "WEIGHMENT_OPERATOR" };
+        int[] ranks = { 0, 1, 2, 3, 4, 5, 6 };
 
         java.util.List<RoleResponse> res = new java.util.ArrayList<>();
         for (int i = 0; i < ns.length; i++) {
@@ -422,7 +517,7 @@ public class AdminService {
                 perms.add(permMap.get("READ_COMPANY"));
                 perms.add(permMap.get("READ_CUSTOMER"));
                 perms.add(permMap.get("READ_BILLING")); // If you have this permission defined
-            } else if (name.equals("SITEOPERATOR") || name.equals("WEIGHMENT_OPERATOR")) {
+            } else if (name.equals("OPERATOR") || name.equals("SITEOPERATOR") || name.equals("WEIGHMENT_OPERATOR")) {
                 perms.add(permMap.get("READ_COMPANY"));
                 perms.add(permMap.get("READ_PRODUCT"));
                 perms.add(permMap.get("READ_POS"));

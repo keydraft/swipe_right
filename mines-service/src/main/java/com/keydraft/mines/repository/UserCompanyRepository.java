@@ -22,4 +22,12 @@ public interface UserCompanyRepository extends JpaRepository<UserCompany, UUID> 
     boolean existsByUser(User user);
 
     boolean existsByBranchIdAndUser_Role_Name(UUID branchId, String roleName);
+
+    List<UserCompany> findByBranchId(UUID branchId);
+
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByBranchId(UUID branchId);
+
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByCompanyId(UUID companyId);
 }

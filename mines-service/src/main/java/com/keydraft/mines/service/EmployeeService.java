@@ -16,6 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 
 import java.security.SecureRandom;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -31,6 +32,7 @@ public class EmployeeService {
     private final RoleRepository roleRepository;
     private final UserRepository userRepository;
     private final UserCompanyRepository userCompanyRepository;
+    private final EmployeeAssignmentRepository employeeAssignmentRepository;
     private final FileStorageService fileStorageService;
     private final PasswordEncoder passwordEncoder;
 
@@ -95,9 +97,17 @@ public class EmployeeService {
                 .drivingLicenseFilePath(em.getDrivingLicenseFilePath());
 
         if (em.getUser() != null) {
-            builder.companyIds(userCompanyRepository.findByUser(em.getUser()).stream()
+            List<UserCompany> associations = userCompanyRepository.findByUser(em.getUser());
+            builder.companyIds(associations.stream()
                     .map(uc -> uc.getCompany().getId())
+                    .distinct()
                     .collect(Collectors.toList()));
+            
+            builder.branchIds(associations.stream()
+                    .filter(uc -> uc.getBranch() != null)
+                    .map(uc -> uc.getBranch().getId())
+                    .collect(Collectors.toList()));
+
             if (em.getBranch() != null) {
                 builder.companyId(em.getBranch().getCompany().getId());
             }
@@ -107,9 +117,8 @@ public class EmployeeService {
     }
 
     private String generateEmployeeCode(Branch br) {
-        String lastCode = employeeRepository.findTopByOrderByEmployeeCodeDesc()
+        String lastCode = employeeRepository.findTopByEmployeeCodeStartingWithOrderByEmployeeCodeDesc("E")
                 .map(Employee::getEmployeeCode)
-                .filter(code -> code.startsWith("E"))
                 .orElse("E00000");
 
         try {
@@ -183,10 +192,11 @@ public class EmployeeService {
         emp.setPanNumber(req.getPanNumber());
         emp.setDrivingLicenseNumber(req.getDrivingLicenseNumber());
 
-        // --- HIERARCHY ---
         Role roleObj = null;
         if (req.getRole() != null) {
-            roleObj = roleRepository.findByName(req.getRole().toUpperCase()).orElse(null);
+            String roleName = req.getRole().toUpperCase();
+            roleObj = roleRepository.findByName(roleName)
+                    .orElseGet(() -> roleRepository.save(Role.builder().name(roleName).rank(10).build()));
             emp.setDesignation(roleObj);
         }
 
@@ -241,6 +251,24 @@ public class EmployeeService {
                         userCompanyRepository.save(UserCompany.builder().user(user).company(co).build());
                     }
                 }
+            } else if ("MANAGER".equals(req.getRole()) && req.getBranchIds() != null && req.getCompanyId() != null) {
+                // Mapping for Manager: One Company, Multiple Branches
+                Company targetCo = companyRepository.findById(req.getCompanyId()).orElseThrow();
+                List<UserCompany> existing = userCompanyRepository.findByUser(user);
+                
+                // Remove mappings (for this company) not in the new list
+                existing.stream()
+                        .filter(uc -> uc.getCompany().getId().equals(targetCo.getId()))
+                        .filter(uc -> uc.getBranch() != null && !req.getBranchIds().contains(uc.getBranch().getId()))
+                        .forEach(userCompanyRepository::delete);
+                
+                // Add mappings that don't already exist
+                for (UUID brId : req.getBranchIds()) {
+                    if (existing.stream().noneMatch(uc -> uc.getBranch() != null && uc.getBranch().getId().equals(brId))) {
+                        Branch br = branchRepository.findById(brId).orElseThrow();
+                        userCompanyRepository.save(UserCompany.builder().user(user).company(targetCo).branch(br).build());
+                    }
+                }
             } else if (!"ADMIN".equals(req.getRole()) && emp.getBranch() != null) {
                 Company targetCo = emp.getBranch().getCompany();
                 List<UserCompany> existing = userCompanyRepository.findByUser(user);
@@ -268,6 +296,20 @@ public class EmployeeService {
         }
 
         Employee saved = employeeRepository.save(emp);
+        
+        // Auto-create initial assignment if it's a new employee
+        if (req.getId() == null && saved.getBranch() != null) {
+            EmployeeAssignment assignment = EmployeeAssignment.builder()
+                    .employee(saved)
+                    .company(saved.getBranch().getCompany())
+                    .branch(saved.getBranch())
+                    .startDate(req.getDateOfJoining())
+                    .current(true)
+                    .build();
+            employeeAssignmentRepository.save(assignment);
+            log.info("Initial assignment created for new employee: {}", saved.getId());
+        }
+
         log.info("Employee saved successfully with ID: {}", saved.getId());
         return mapToResponse(saved);
     }
@@ -318,5 +360,56 @@ public class EmployeeService {
     @Transactional
     public void deleteEmployee(java.util.UUID id) {
         employeeRepository.deleteById(id);
+    }
+
+    @Transactional
+    public EmployeeResponse transferEmployee(UUID employeeId, UUID targetBranchId, LocalDate transferDate) {
+        Employee emp = employeeRepository.findById(employeeId).orElseThrow();
+        Branch targetBranch = branchRepository.findById(targetBranchId).orElseThrow();
+        Company targetCompany = targetBranch.getCompany();
+
+        // 1. Close current assignment
+        employeeAssignmentRepository.findByEmployeeAndCurrentTrue(emp).ifPresent(current -> {
+            current.setCurrent(false);
+            current.setEndDate(transferDate.minusDays(1));
+            employeeAssignmentRepository.save(current);
+        });
+
+        // 2. Create new assignment
+        EmployeeAssignment newAssignment = EmployeeAssignment.builder()
+                .employee(emp)
+                .company(targetCompany)
+                .branch(targetBranch)
+                .startDate(transferDate)
+                .current(true)
+                .build();
+        employeeAssignmentRepository.save(newAssignment);
+
+        // 3. Update employee's current branch (cache)
+        emp.setBranch(targetBranch);
+        employeeRepository.save(emp);
+
+        return mapToResponse(emp);
+    }
+
+    private EmployeeAssignmentResponse mapToAssignmentResponse(EmployeeAssignment ea) {
+        return EmployeeAssignmentResponse.builder()
+                .id(ea.getId())
+                .companyName(ea.getCompany() != null ? ea.getCompany().getName() : "N/A")
+                .branchName(ea.getBranch() != null ? ea.getBranch().getName() : "N/A")
+                .companyId(ea.getCompany() != null ? ea.getCompany().getId() : null)
+                .branchId(ea.getBranch() != null ? ea.getBranch().getId() : null)
+                .startDate(ea.getStartDate())
+                .endDate(ea.getEndDate())
+                .current(ea.isCurrent())
+                .build();
+    }
+
+    public List<EmployeeAssignmentResponse> getEmployeeHistory(UUID employeeId) {
+        Employee emp = employeeRepository.findById(employeeId).orElseThrow();
+        return employeeAssignmentRepository.findByEmployeeOrderByStartDateDesc(emp)
+                .stream()
+                .map(this::mapToAssignmentResponse)
+                .collect(Collectors.toList());
     }
 }

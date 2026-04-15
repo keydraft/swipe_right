@@ -14,7 +14,8 @@ import {
     PrintOutlined as PrintIcon, SortOutlined as SortIcon, VisibilityOutlined as ViewIcon,
     EditOutlined as EditIcon, DeleteOutline as DeleteIcon, Close as CloseIcon,
     AddCircleOutline as AddCircleIcon, AttachMoneyOutlined as PriceIcon,
-    ArrowBackIos as BackIcon, ArrowForwardIos as NextIcon, CheckCircleOutlined as SaveIcon
+    ArrowBackIos as BackIcon, ArrowForwardIos as NextIcon, CheckCircleOutlined as SaveIcon,
+    AltRouteOutlined as RouteIcon
 } from "@mui/icons-material";
 import { palette } from "@/theme";
 import { customerApi, productApi, adminApi } from "@/services/api";
@@ -22,6 +23,8 @@ import { useFormik, FormikProvider } from "formik";
 import * as Yup from "yup";
 import { phoneRegex, pincodeRegex, gstinRegex } from "@/utils/validationSchemas";
 import Cookies from "js-cookie";
+
+import { useApp } from "@/context/AppContext";
 
 const steps = ['Registry Information', 'Pricing & Sites'];
 
@@ -45,8 +48,87 @@ function CustomerBranchDropdown({ companyId, value, onChange, renderField }) {
     );
 }
 
+// ─── Table Cell Branch Dropdown ────────────────────────────
+function TableCellBranchDropdown({ companyId, value, onChange }) {
+    const [branches, setBranches] = React.useState([]);
+
+    React.useEffect(() => {
+        if (!companyId) { setBranches([]); return; }
+        adminApi.getBranches(companyId).then(res => {
+            if (res.success) {
+                const list = res.data || [];
+                setBranches(list);
+            }
+        }).catch(() => setBranches([]));
+    }, [companyId]);
+
+    return (
+        <Select fullWidth size="small" value={value || ""} onChange={(e) => onChange(e.target.value)} variant="standard">
+            <MenuItem value="">Select Branch</MenuItem>
+            {branches.map(b => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
+        </Select>
+    );
+}
+
+// ─── Branch Name Resolver for Price Cards ────────────────────
+function PriceBranchName({ branchId }) {
+    const [name, setName] = React.useState('');
+    React.useEffect(() => {
+        if (!branchId) return;
+        // We need to find the branch name - try fetching from all companies
+        // This is a lightweight component that caches itself per branchId
+        setName('');
+    }, [branchId]);
+
+    // Since we can't easily look up branch by ID alone, we render branchId short form
+    // The actual name will be resolved from the admin API cache
+    const [branchName, setBranchName] = React.useState('');
+    React.useEffect(() => {
+        if (!branchId) { setBranchName(''); return; }
+        // Try to find branch name from any company
+        const tryResolve = async () => {
+            try {
+                // Use a general search - find the branch across companies
+                const stored = localStorage.getItem("user");
+                if (stored) {
+                    const user = JSON.parse(stored);
+                    if (user.role === "ADMIN") {
+                        const resp = await adminApi.getCompanies(0, 1000);
+                        if (resp.success) {
+                            for (const company of resp.data.content) {
+                                const brResp = await adminApi.getBranches(company.id);
+                                if (brResp.success) {
+                                    const found = brResp.data.find(b => b.id === branchId);
+                                    if (found) { setBranchName(found.name); return; }
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e) { /* ignore */ }
+        };
+        tryResolve();
+    }, [branchId]);
+
+    return branchName ? <span style={{ opacity: 0.7, fontWeight: 400 }}> → {branchName}</span> : null;
+}
+
 export default function CustomerPage() {
     const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
+    const { selectedCompany, selectedBranch } = useApp();
+    // ─── Field Character Limits ──────────────────────────────
+    const FIELD_LIMITS = {
+        name: 50,
+        phone: 10,
+        email: 50,
+        gstin: 15,
+        'address.addressLine1': 100,
+        'address.addressLine2': 100,
+        'address.district': 50,
+        'address.state': 50,
+        'address.pincode': 6
+    };
+
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
     const [activeStep, setActiveStep] = useState(0);
@@ -56,6 +138,12 @@ export default function CustomerPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [showSuccess, setShowSuccess] = useState(false);
+
+    // Pricing Step State
+    const [pricingCompanyId, setPricingCompanyId] = useState("");
+    const [pricingBranchId, setPricingBranchId] = useState("");
+    const [pricingSiteIndex, setPricingSiteIndex] = useState(""); // Route mapping support
+    const [pricingBranches, setPricingBranches] = useState([]);
 
     // View Details State
     const [viewModalOpen, setViewModalOpen] = useState(false);
@@ -126,7 +214,9 @@ export default function CustomerPage() {
 
     const fetchCustomers = async () => {
         try {
-            const response = await customerApi.getAll(page, rowsPerPage, searchQuery);
+            const companyId = selectedCompany?.id || selectedCompany?.companyId || null;
+            const branchId = selectedBranch?.id || null;
+            const response = await customerApi.getAll(page, rowsPerPage, searchQuery, companyId, branchId);
             if (response.success) {
                 setCustomers(response.data.content);
                 setTotalElements(response.data.totalElements);
@@ -151,11 +241,6 @@ export default function CustomerPage() {
                     });
                 } else if (userData.companies) {
                     setUserCompanyInfo(userData.companies);
-                    // Default to first company/branch if valid
-                    if (userData.companies.length > 0) {
-                        formik.setFieldValue("companyId", userData.companies[0].companyId);
-                        formik.setFieldValue("branchId", userData.companies[0].branchId || "");
-                    }
                 }
             } catch (e) {
                 console.error("Error parsing user data for company info", e);
@@ -165,11 +250,15 @@ export default function CustomerPage() {
     }, []);
 
     useEffect(() => {
+        setPage(0);
+    }, [selectedCompany, selectedBranch]);
+
+    useEffect(() => {
         const timer = setTimeout(() => {
             fetchCustomers();
         }, 300);
         return () => clearTimeout(timer);
-    }, [page, rowsPerPage, searchQuery]);
+    }, [page, rowsPerPage, searchQuery, selectedCompany, selectedBranch]);
 
     const handleChangePage = (event, newPage) => {
         setPage(newPage);
@@ -268,9 +357,10 @@ export default function CustomerPage() {
     const renderField = (label, placeholder, field, type = "text", isSelect = false, options = []) => {
         const fieldKeys = field.split('.');
         const getFieldMeta = (name) => {
-            const keys = name.split('.');
+            const keys = name.replace(/\[(\d+)\]/g, '.$1').split('.');
             let meta = { touched: formik.touched, error: formik.errors, value: formik.values };
             for (const key of keys) {
+                if (key === '') continue; // handle any double dots if they appear
                 meta = {
                     touched: meta.touched?.[key],
                     error: meta.error?.[key],
@@ -325,15 +415,39 @@ export default function CustomerPage() {
                         variant="outlined"
                         value={meta.value || ""}
                         onChange={(e) => {
-                            if (field === "gstin") {
-                                formik.setFieldValue(field, e.target.value.toUpperCase());
-                            } else {
-                                formik.handleChange(e);
+                            let val = e.target.value;
+                            const limit = FIELD_LIMITS[field] || 255;
+
+                            // Enforce character limit
+                            if (val.length > limit) val = val.slice(0, limit);
+
+                            // Uppercase (except email)
+                            if (field !== 'email') {
+                                val = val.toUpperCase();
                             }
+
+                            // Field-specific character restrictions
+                            const letterOnlyFields = ['address.district', 'address.state'];
+                            const numericOnlyFields = ['phone', 'address.pincode'];
+
+                            if (letterOnlyFields.includes(field)) {
+                                val = val.replace(/[^A-Z\s]/g, '');
+                            } else if (numericOnlyFields.includes(field)) {
+                                val = val.replace(/[^0-9]/g, '');
+                            } else if (field === 'gstin') {
+                                val = val.replace(/[^A-Z0-9]/g, '');
+                            } else if (field === 'name') {
+                                val = val.replace(/[^A-Z0-9\s&.-]/g, '');
+                            }
+
+                            formik.setFieldValue(field, val);
                         }}
                         onBlur={formik.handleBlur}
                         error={hasError}
                         helperText={hasError ? meta.error : ""}
+                        inputProps={{
+                            maxLength: FIELD_LIMITS[field] || 255
+                        }}
                         FormHelperTextProps={{ sx: { ml: 0.5, mt: 0.5, fontSize: '11px', fontWeight: 500 } }}
                         sx={{
                             '& .MuiOutlinedInput-root': {
@@ -359,24 +473,106 @@ export default function CustomerPage() {
         formik.setFieldValue("sites", [...formik.values.sites, newSite]);
     };
 
-    const handleAddPrice = (targetField) => {
-        const newPrice = { productId: "", rate: 0, cashRate: 0, creditRate: 0, transportRate: 0, uom: "TONS", tonnageLimit: 0, gstInclusive: false };
-        if (targetField === 'prices') {
-            formik.setFieldValue("prices", [...formik.values.prices, newPrice]);
-        } else {
-            const parts = targetField.split('.');
-            const idx = parseInt(parts[0].match(/\d+/)[0]);
-            const sites = [...formik.values.sites];
-            sites[idx].prices.push(newPrice);
-            formik.setFieldValue("sites", sites);
+    // When Company changes in pricing step, fetch branches
+    const handlePricingCompanyChange = async (companyId) => {
+        setPricingCompanyId(companyId);
+        setPricingBranchId("");
+        setPricingBranches([]);
+        if (!companyId) return;
+        try {
+            const res = await adminApi.getBranches(companyId);
+            if (res.success) setPricingBranches(res.data || []);
+        } catch (e) { console.error(e); }
+        // For Corporate: only load if a site is selected
+        if (formik.values.type === 'CORPORATE' && pricingSiteIndex !== "") {
+            handleLoadPrices(companyId, null, pricingSiteIndex);
         }
+    };
+
+    // Auto-populate all products for a Company+Branch (LOCAL) or Company (CORPORATE)
+    const handleLoadPrices = (companyId, branchId, siteIdx = "") => {
+        if (!companyId) return;
+        const isLocal = formik.values.type === 'LOCAL';
+        if (isLocal && !branchId) return;
+
+        const isCorporateSite = !isLocal && siteIdx !== "";
+        const targetPrices = isCorporateSite ? (formik.values.sites[siteIdx]?.prices || []) : formik.values.prices;
+
+        // Check if prices already exist for this company+branch combo
+        const existingPrices = targetPrices.filter(p => {
+            if (isLocal) return p.companyId === companyId && p.branchId === branchId;
+            return p.companyId === companyId;
+        });
+
+        // Find products that don't have a price row yet
+        const existingProductIds = existingPrices.map(p => p.productId);
+        const newPrices = products
+            .filter(pr => !existingProductIds.includes(pr.id))
+            .map(pr => ({
+                productId: pr.id,
+                companyId: companyId,
+                branchId: isLocal ? branchId : null,
+                rate: 0, cashRate: 0, creditRate: 0, transportRate: 0,
+                uom: "TONS", tonnageLimit: 0, gstInclusive: false
+            }));
+
+        if (newPrices.length > 0) {
+            if (isCorporateSite) {
+                formik.setFieldValue(`sites[${siteIdx}].prices`, [...targetPrices, ...newPrices]);
+            } else {
+                formik.setFieldValue("prices", [...formik.values.prices, ...newPrices]);
+            }
+        }
+    };
+
+    // Remove a price configuration card
+    const handleRemovePriceCard = (companyId, branchId) => {
+        const isLocal = formik.values.type === 'LOCAL';
+        const isCorporateSite = !isLocal && pricingSiteIndex !== "";
+        const targetPrices = isCorporateSite ? (formik.values.sites[pricingSiteIndex]?.prices || []) : formik.values.prices;
+
+        const remaining = targetPrices.filter(p => {
+            if (isLocal) return !(p.companyId === companyId && p.branchId === branchId);
+            return p.companyId !== companyId;
+        });
+        
+        if (isCorporateSite) {
+            formik.setFieldValue(`sites[${pricingSiteIndex}].prices`, remaining);
+        } else {
+            formik.setFieldValue("prices", remaining);
+        }
+    };
+
+    // Group prices by company+branch for display
+    const getGroupedPrices = () => {
+        const groups = {};
+        const isLocal = formik.values.type === 'LOCAL';
+        const companiesList = allCompanies.length > 0 ? allCompanies : userCompanyInfo.map(c => ({ id: c.companyId, name: c.companyName }));
+        const isCorporateSite = !isLocal && pricingSiteIndex !== "";
+        const targetPrices = isCorporateSite ? (formik.values.sites[pricingSiteIndex]?.prices || []) : formik.values.prices;
+
+        targetPrices.forEach((p, idx) => {
+            const key = isLocal ? `${p.companyId}__${p.branchId}` : `${p.companyId}`;
+            if (!groups[key]) {
+                const company = companiesList.find(c => c.id === p.companyId);
+                groups[key] = {
+                    companyId: p.companyId,
+                    branchId: p.branchId,
+                    companyName: company?.name || 'Unknown',
+                    branchName: '', // will be resolved
+                    items: []
+                };
+            }
+            groups[key].items.push({ ...p, _idx: idx });
+        });
+        return Object.values(groups);
     };
 
     const nextStep = async () => {
         if (activeStep === 0) {
             const errors = await formik.validateForm();
-            if (errors.name || errors.phone || errors.email || errors.gstin || errors.address) {
-                // Touch all fields to show errors
+            if (Object.keys(errors).length > 0) {
+                // Focus on errors
                 formik.setTouched({
                     name: true,
                     type: true,
@@ -391,6 +587,10 @@ export default function CustomerPage() {
                     }
                 });
                 return;
+            }
+            // If Corporate, auto-select first site if none selected
+            if (formik.values.type === 'CORPORATE' && pricingSiteIndex === "" && formik.values.sites.length > 0) {
+                setPricingSiteIndex(0);
             }
             setActiveStep(1);
         }
@@ -625,27 +825,10 @@ export default function CustomerPage() {
 
                                     <Box sx={{ minHeight: '400px', mt: 4 }}>
                                         {activeStep === 0 ? (
-                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: "10px 20px" }}>
-                                                {/* Entity Assignment */}
-                                                <Box sx={{ width: '100%', mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Entity Assignment</Typography></Box>
-                                                
-                                                <Box sx={{ width: 'calc(50% - 10px)' }}>
-                                                    {currentUser?.role === "ADMIN" 
-                                                        ? renderField("Company *", "Select Company", "companyId", "text", true, allCompanies.map(c => ({ label: c.name, value: c.id })))
-                                                        : renderField("Company *", "Select Company", "companyId", "text", true, userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))
-                                                    }
-                                                </Box>
-                                                <Box sx={{ width: 'calc(50% - 10px)' }}>
-                                                    <CustomerBranchDropdown
-                                                        companyId={formik.values.companyId}
-                                                        value={formik.values.branchId}
-                                                        onChange={(val) => formik.setFieldValue("branchId", val)}
-                                                        renderField={renderField}
-                                                    />
-                                                </Box>
-
+                                            <>
+                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: "10px 20px" }}>
                                                 {/* General Information */}
-                                                <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>General Information</Typography></Box>
+                                                <Box sx={{ width: '100%', mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>General Information</Typography></Box>
                                                 <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Customer Name *", "Enter full name", "name")}</Box>
                                                 <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Customer Type *", "Select type", "type", "text", true, [{ label: "LOCAL", value: "LOCAL" }, { label: "CORPORATE", value: "CORPORATE" }])}</Box>
                                                 <Box sx={{ width: 'calc(50% - 10px)' }}>{renderField("Primary Phone *", "Enter phone number", "phone")}</Box>
@@ -659,95 +842,241 @@ export default function CustomerPage() {
                                                 <Box sx={{ width: 'calc(33.33% - 13.33px)' }}>{renderField("District *", "City/District", "address.district")}</Box>
                                                 <Box sx={{ width: 'calc(33.33% - 13.33px)' }}>{renderField("State *", "Select state", "address.state")}</Box>
                                                 <Box sx={{ width: 'calc(33.33% - 13.33px)' }}>{renderField("Pincode *", "6-digit code", "address.pincode")}</Box>
-                                            </Box>
-                                        ) : (
-                                            <Box>
-                                                {formik.values.type === 'CORPORATE' ? (
-                                                    <Box>
-                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                                                            <Typography sx={{ fontWeight: 700, color: '#0057FF' }}>Delivery Sites & Pricing</Typography>
-                                                            <Button startIcon={<AddCircleIcon />} onClick={handleAddSite} variant="contained" size="small" sx={{ borderRadius: '8px', background: '#1E293B', textTransform: 'none' }}>Add New Site</Button>
+                                                </Box>
+
+                                                {/* Client Sites for Corporate Customers */}
+                                                {formik.values.type === 'CORPORATE' && (
+                                                    <Box sx={{ width: '100%', mt: 4, mb: 1 }}>
+                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                                                            <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Destination Sites (Client Sites)</Typography>
+                                                            <Button size="small" startIcon={<AddIcon />} variant="outlined" onClick={handleAddSite} sx={{ borderRadius: '8px', textTransform: 'none', fontWeight: 600 }}>
+                                                                Add Site
+                                                            </Button>
                                                         </Box>
-                                                        {formik.values.sites.map((site, sIdx) => (
-                                                            <Card key={sIdx} sx={{ mb: 3, p: 3, border: `1px solid ${palette.divider}`, bgcolor: '#F9FAFB', borderRadius: '16px' }}>
-                                                                <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
-                                                                    <TextField fullWidth size="small" label="Site Name" value={site.siteName} onChange={(e) => formik.setFieldValue(`sites[${sIdx}].siteName`, e.target.value)} sx={{ bgcolor: '#fff', borderRadius: '8px' }} />
-                                                                    <TextField fullWidth size="small" label="Site Phone" value={site.phone} onChange={(e) => formik.setFieldValue(`sites[${sIdx}].phone`, e.target.value)} sx={{ bgcolor: '#fff', borderRadius: '8px' }} />
-                                                                </Stack>
-                                                                <Box sx={{ bgcolor: '#fff', borderRadius: '12px', overflow: 'hidden', border: `1px solid ${palette.divider}` }}>
-                                                                    <Table size="small">
-                                                                        <TableHead sx={{ bgcolor: palette.background.paper }}>
-                                                                            <TableRow>
-                                                                                <TableCell sx={{ fontWeight: 700 }}>PRODUCT</TableCell>
-                                                                                <TableCell sx={{ fontWeight: 700 }}>TRANSPORT</TableCell>
-                                                                                <TableCell sx={{ fontWeight: 700 }}>RATE</TableCell>
-                                                                                <TableCell sx={{ fontWeight: 700 }}>UOM</TableCell>
-                                                                                <TableCell align="center" sx={{ fontWeight: 700 }}>GST</TableCell>
-                                                                            </TableRow>
-                                                                        </TableHead>
-                                                                        <TableBody>
-                                                                            {site.prices.map((p, pIdx) => (
-                                                                                <TableRow key={pIdx}>
-                                                                                    <TableCell sx={{ width: '25%' }}>
-                                                                                        <Select fullWidth size="small" value={p.productId} onChange={(e) => formik.setFieldValue(`sites[${sIdx}].prices[${pIdx}].productId`, e.target.value)} variant="standard">
-                                                                                            {products.map(pr => <MenuItem key={pr.id} value={pr.id}>{pr.name}</MenuItem>)}
-                                                                                        </Select>
-                                                                                    </TableCell>
-                                                                                    <TableCell><TextField fullWidth size="small" type="number" value={p.transportRate} onChange={(e) => formik.setFieldValue(`sites[${sIdx}].prices[${pIdx}].transportRate`, e.target.value)} variant="standard" /></TableCell>
-                                                                                    <TableCell><TextField fullWidth size="small" type="number" value={p.rate} onChange={(e) => formik.setFieldValue(`sites[${sIdx}].prices[${pIdx}].rate`, e.target.value)} variant="standard" /></TableCell>
-                                                                                    <TableCell>
-                                                                                        <Select fullWidth size="small" value={p.uom} onChange={(e) => formik.setFieldValue(`sites[${sIdx}].prices[${pIdx}].uom`, e.target.value)} variant="standard">
-                                                                                            <MenuItem value="TONS">TONS</MenuItem><MenuItem value="UNIT">UNIT</MenuItem>
-                                                                                        </Select>
-                                                                                    </TableCell>
-                                                                                    <TableCell align="center"><Checkbox size="small" checked={p.gstInclusive} onChange={(e) => formik.setFieldValue(`sites[${sIdx}].prices[${pIdx}].gstInclusive`, e.target.checked)} /></TableCell>
-                                                                                </TableRow>
-                                                                            ))}
-                                                                        </TableBody>
-                                                                    </Table>
-                                                                    <Button fullWidth size="small" onClick={() => handleAddPrice(`sites[${sIdx}].prices`)} sx={{ bgcolor: '#F9FAFB', color: '#0057FF', fontWeight: 700, py: 1 }}>+ Add Product Config</Button>
-                                                                </Box>
-                                                            </Card>
-                                                        ))}
-                                                    </Box>
-                                                ) : (
-                                                    <Box>
-                                                        <Typography sx={{ fontWeight: 700, mb: 2, color: '#0057FF' }}>Price Management (Local Model)</Typography>
-                                                        <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${palette.divider}`, borderRadius: '12px' }}>
-                                                            <Table size="small">
-                                                                <TableHead sx={{ bgcolor: palette.background.paper }}>
-                                                                    <TableRow>
-                                                                        <TableCell sx={{ fontWeight: 700 }}>PRODUCT NAME</TableCell>
-                                                                        <TableCell sx={{ fontWeight: 700 }}>CASH RATE</TableCell>
-                                                                        <TableCell sx={{ fontWeight: 700 }}>CREDIT RATE</TableCell>
-                                                                        <TableCell sx={{ fontWeight: 700 }}>UOM</TableCell>
-                                                                        <TableCell align="center" sx={{ fontWeight: 700 }}>GST</TableCell>
-                                                                    </TableRow>
-                                                                </TableHead>
-                                                                <TableBody>
-                                                                    {formik.values.prices.map((p, idx) => (
-                                                                        <TableRow key={idx}>
-                                                                            <TableCell sx={{ width: '30%' }}>
-                                                                                <Select fullWidth size="small" value={p.productId} onChange={(e) => formik.setFieldValue(`prices[${idx}].productId`, e.target.value)} variant="standard">
-                                                                                    {products.map(pr => <MenuItem key={pr.id} value={pr.id}>{pr.name}</MenuItem>)}
-                                                                                </Select>
-                                                                            </TableCell>
-                                                                            <TableCell><TextField fullWidth size="small" type="number" value={p.cashRate} onChange={(e) => formik.setFieldValue(`prices[${idx}].cashRate`, e.target.value)} variant="standard" /></TableCell>
-                                                                            <TableCell><TextField fullWidth size="small" type="number" value={p.creditRate} onChange={(e) => formik.setFieldValue(`prices[${idx}].creditRate`, e.target.value)} variant="standard" /></TableCell>
-                                                                            <TableCell>
-                                                                                <Select fullWidth size="small" value={p.uom} onChange={(e) => formik.setFieldValue(`prices[${idx}].uom`, e.target.value)} variant="standard">
-                                                                                    <MenuItem value="TONS">TONS</MenuItem><MenuItem value="UNIT">UNIT</MenuItem>
-                                                                                </Select>
-                                                                            </TableCell>
-                                                                            <TableCell align="center"><Checkbox size="small" checked={p.gstInclusive} onChange={(e) => formik.setFieldValue(`prices[${idx}].gstInclusive`, e.target.checked)} /></TableCell>
-                                                                        </TableRow>
-                                                                    ))}
-                                                                </TableBody>
-                                                            </Table>
-                                                        </TableContainer>
-                                                        <Button onClick={() => handleAddPrice('prices')} sx={{ mt: 2, fontWeight: 700, color: '#0057FF' }}>+ Add Local Price Configuration</Button>
+                                                        {formik.values.sites.length === 0 ? (
+                                                            <Box sx={{ p: 3, textAlign: 'center', border: '1px dashed #E5E7EB', borderRadius: '12px', bgcolor: '#F9FAFB' }}>
+                                                                <Typography sx={{ color: '#6B7280', fontSize: '13px', fontWeight: 500 }}>No sites added. Click "Add Site" to define a destination for this corporate customer.</Typography>
+                                                            </Box>
+                                                        ) : (
+                                                            <Stack spacing={2}>
+                                                                {formik.values.sites.map((site, index) => (
+                                                                    <Card key={index} sx={{ p: 2, borderRadius: '12px', border: '1px solid #E5E7EB', boxShadow: 'none', position: 'relative' }}>
+                                                                        <IconButton size="small" onClick={() => {
+                                                                            const newSites = [...formik.values.sites];
+                                                                            newSites.splice(index, 1);
+                                                                            formik.setFieldValue("sites", newSites);
+                                                                        }} sx={{ position: 'absolute', top: 8, right: 8, color: '#EF4444' }}>
+                                                                            <DeleteIcon fontSize="small" />
+                                                                        </IconButton>
+                                                                        <Typography sx={{ fontWeight: 700, fontSize: '14px', mb: 2, color: '#374151' }}>Site {index + 1}</Typography>
+                                                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: "10px 20px" }}>
+                                                                            <Box sx={{ width: '100%' }}>{renderField(`Site Name *`, "Factory/Plant Name", `sites[${index}].siteName`)}</Box>
+                                                                            <Box sx={{ width: '100%' }}>{renderField(`Address Line 1 *`, "Street/Area", `sites[${index}].address.addressLine1`)}</Box>
+                                                                            <Box sx={{ width: 'calc(33.33% - 13.33px)' }}>{renderField(`District *`, "District", `sites[${index}].address.district`)}</Box>
+                                                                            <Box sx={{ width: 'calc(33.33% - 13.33px)' }}>{renderField(`State *`, "State", `sites[${index}].address.state`)}</Box>
+                                                                            <Box sx={{ width: 'calc(33.33% - 13.33px)' }}>{renderField(`Pincode *`, "Pincode", `sites[${index}].address.pincode`)}</Box>
+                                                                        </Box>
+                                                                    </Card>
+                                                                ))}
+                                                            </Stack>
+                                                        )}
                                                     </Box>
                                                 )}
+                                            </>
+                                        ) : (
+                                            <Box>
+                                                {/* ── Filter / Select Company & Branch ── */}
+                                                <Card sx={{ mb: 3, p: 2.5, borderRadius: '16px', bgcolor: '#F8FAFC', border: '1px solid #E2E8F0' }}>
+                                                    <Stack direction="row" spacing={2} alignItems="flex-end">
+                                                        <Box sx={{ flex: 1 }}>
+                                                            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#64748B', mb: 0.5 }}>Source Company</Typography>
+                                                            <Select fullWidth size="small" value={pricingCompanyId}
+                                                                onChange={(e) => handlePricingCompanyChange(e.target.value)}
+                                                                displayEmpty
+                                                                sx={{ borderRadius: '10px', bgcolor: '#fff', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#E5E7EB' } }}>
+                                                                <MenuItem value="">Select Company...</MenuItem>
+                                                                {allCompanies.length > 0 ? allCompanies.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)
+                                                                    : userCompanyInfo.map(c => <MenuItem key={c.companyId} value={c.companyId}>{c.companyName}</MenuItem>)}
+                                                            </Select>
+                                                        </Box>
+                                                        {formik.values.type === 'LOCAL' ? (
+                                                            <Box sx={{ flex: 1 }}>
+                                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#64748B', mb: 0.5 }}>Branch</Typography>
+                                                                <Select fullWidth size="small" value={pricingBranchId}
+                                                                    onChange={(e) => {
+                                                                        setPricingBranchId(e.target.value);
+                                                                        if (e.target.value && pricingCompanyId) {
+                                                                            handleLoadPrices(pricingCompanyId, e.target.value);
+                                                                        }
+                                                                    }}
+                                                                    displayEmpty disabled={!pricingCompanyId}
+                                                                    sx={{ borderRadius: '10px', bgcolor: '#fff', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#E5E7EB' } }}>
+                                                                    <MenuItem value="">Select Branch...</MenuItem>
+                                                                    {pricingBranches.map(b => <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>)}
+                                                                </Select>
+                                                            </Box>
+                                                        ) : (
+                                                            <Box sx={{ flex: 1 }}>
+                                                                <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#64748B', mb: 0.5 }}>Destination Site (Route Override)</Typography>
+                                                                <Select fullWidth size="small" value={pricingSiteIndex}
+                                                                    onChange={(e) => {
+                                                                        setPricingSiteIndex(e.target.value);
+                                                                        if (pricingCompanyId) handleLoadPrices(pricingCompanyId, null, e.target.value);
+                                                                    }}
+                                                                    displayEmpty
+                                                                    sx={{ borderRadius: '10px', bgcolor: '#fff', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#E5E7EB' } }}>
+                                                                    <MenuItem value="" disabled>Select Destination Site...</MenuItem>
+                                                                    {formik.values.sites.map((s, idx) => (
+                                                                        <MenuItem key={idx} value={idx}>{s.siteName || `Site ${idx + 1}`}</MenuItem>
+                                                                    ))}
+                                                                </Select>
+                                                                {formik.values.sites.length === 0 && (
+                                                                    <Typography sx={{ color: '#EF4444', fontSize: '11px', mt: 0.5 }}>Please add atleast one site in Step 1</Typography>
+                                                                )}
+                                                            </Box>
+                                                        )}
+                                                    </Stack>
+                                                </Card>
+
+                                                {/* ── All Saved Price Cards ── */}
+                                                {(() => {
+                                                    const isLocal = formik.values.type === 'LOCAL';
+                                                    const grouped = getGroupedPrices();
+                                                    const basePath = (!isLocal && pricingSiteIndex !== "") ? `sites[${pricingSiteIndex}].prices` : `prices`;
+
+                                                    if (grouped.length === 0) {
+                                                        return (
+                                                            <Box sx={{ textAlign: 'center', py: 6, borderRadius: '16px', border: '1px dashed #CBD5E1', bgcolor: '#fff' }}>
+                                                                <PriceIcon sx={{ fontSize: 48, color: '#CBD5E1', mb: 1 }} />
+                                                                <Typography sx={{ color: '#94A3B8', fontWeight: 600, fontSize: '15px' }}>No pricing linked yet</Typography>
+                                                                <Typography sx={{ color: '#CBD5E1', fontSize: '13px', mt: 0.5 }}>Link your first company & branch using the tool above</Typography>
+                                                            </Box>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                                            {grouped.map((group, groupIdx) => {
+                                                                const isActive = isLocal 
+                                                                    ? (group.companyId === pricingCompanyId && group.branchId === pricingBranchId)
+                                                                    : (group.companyId === pricingCompanyId);
+
+                                                                return (
+                                                                    <Card key={groupIdx} sx={{ 
+                                                                        borderRadius: '16px', 
+                                                                        overflow: 'hidden', 
+                                                                        border: isActive ? '2px solid #0057FF' : '1px solid #E2E8F0', 
+                                                                        boxShadow: isActive ? '0 8px 32px rgba(0,87,255,0.1)' : '0 2px 8px rgba(0,0,0,0.04)',
+                                                                        transition: 'all 0.3s ease'
+                                                                    }}>
+                                                                        {/* Card Header */}
+                                                                        <Box sx={{ 
+                                                                            px: 3, py: 1.5, 
+                                                                            background: isActive ? 'linear-gradient(135deg, #0057FF 0%, #003499 100%)' : 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)', 
+                                                                            display: 'flex', justifyContent: 'space-between', alignItems: 'center' 
+                                                                        }}>
+                                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#22C55E' }} />
+                                                                                <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: '14px' }}>
+                                                                                    {group.companyName}
+                                                                                    {isLocal && <PriceBranchName branchId={group.branchId} />}
+                                                                                    {!isLocal && pricingSiteIndex !== "" && (
+                                                                                        <span style={{ opacity: 0.7, fontWeight: 400 }}> → {formik.values.sites[pricingSiteIndex]?.siteName || 'Site'}</span>
+                                                                                    )}
+                                                                                </Typography>
+                                                                                <Box sx={{ px: 1.5, py: 0.3, borderRadius: '8px', bgcolor: 'rgba(255,255,255,0.15)', fontSize: '11px', fontWeight: 600, color: '#F8FAFC' }}>
+                                                                                    {group.items.length} products
+                                                                                </Box>
+                                                                            </Box>
+                                                                            <IconButton size="small" onClick={() => handleRemovePriceCard(group.companyId, group.branchId)} sx={{ color: '#EF4444', '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' } }}>
+                                                                                <DeleteIcon fontSize="small" sx={{ color: isActive ? '#fff' : '#EF4444' }} />
+                                                                            </IconButton>
+                                                                        </Box>
+                                                                        {/* Product Rows */}
+                                                                        <TableContainer>
+                                                                            <Table size="small">
+                                                                                <TableHead sx={{ bgcolor: '#F8FAFC' }}>
+                                                                                    <TableRow>
+                                                                                        <TableCell sx={{ fontWeight: 700, fontSize: '11px', color: '#64748B', letterSpacing: '0.5px' }}>PRODUCT</TableCell>
+                                                                                        {isLocal ? (
+                                                                                            <>
+                                                                                                <TableCell sx={{ fontWeight: 700, fontSize: '11px', color: '#64748B', letterSpacing: '0.5px' }}>CASH RATE (₹)</TableCell>
+                                                                                                <TableCell sx={{ fontWeight: 700, fontSize: '11px', color: '#64748B', letterSpacing: '0.5px' }}>CREDIT RATE (₹)</TableCell>
+                                                                                            </>
+                                                                                        ) : (
+                                                                                            <>
+                                                                                                <TableCell sx={{ fontWeight: 700, fontSize: '11px', color: '#64748B', letterSpacing: '0.5px' }}>RATE (₹)</TableCell>
+                                                                                                <TableCell sx={{ fontWeight: 700, fontSize: '11px', color: '#64748B', letterSpacing: '0.5px' }}>TRANSPORT (₹)</TableCell>
+                                                                                            </>
+                                                                                        )}
+                                                                                        <TableCell sx={{ fontWeight: 700, fontSize: '11px', color: '#64748B', letterSpacing: '0.5px' }}>UOM</TableCell>
+                                                                                        <TableCell align="center" sx={{ fontWeight: 700, fontSize: '11px', color: '#64748B', letterSpacing: '0.5px' }}>GST INCL.</TableCell>
+                                                                                    </TableRow>
+                                                                                </TableHead>
+                                                                                <TableBody>
+                                                                                    {group.items.map((item, iIdx) => {
+                                                                                        const productInfo = products.find(pr => pr.id === item.productId);
+                                                                                        const realIdx = item._idx;
+                                                                                        return (
+                                                                                            <TableRow key={iIdx} sx={{ '&:hover': { bgcolor: '#F8FAFC' }, '&:last-child td': { borderBottom: 0 } }}>
+                                                                                                <TableCell sx={{ fontWeight: 600, color: '#374151', fontSize: '13px', width: '30%' }}>
+                                                                                                    {productInfo?.name || 'Unknown Product'}
+                                                                                                </TableCell>
+                                                                                                {isLocal ? (
+                                                                                                    <>
+                                                                                                        <TableCell sx={{ width: '20%' }}>
+                                                                                                            <TextField fullWidth size="small" type="number" placeholder="0"
+                                                                                                                value={item.cashRate || ''}
+                                                                                                                onChange={(e) => formik.setFieldValue(`${basePath}[${realIdx}].cashRate`, parseFloat(e.target.value) || 0)}
+                                                                                                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', bgcolor: '#fff' } }} />
+                                                                                                        </TableCell>
+                                                                                                        <TableCell sx={{ width: '20%' }}>
+                                                                                                            <TextField fullWidth size="small" type="number" placeholder="0"
+                                                                                                                value={item.creditRate || ''}
+                                                                                                                onChange={(e) => formik.setFieldValue(`${basePath}[${realIdx}].creditRate`, parseFloat(e.target.value) || 0)}
+                                                                                                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', bgcolor: '#fff' } }} />
+                                                                                                        </TableCell>
+                                                                                                    </>
+                                                                                                ) : (
+                                                                                                    <>
+                                                                                                        <TableCell sx={{ width: '20%' }}>
+                                                                                                            <TextField fullWidth size="small" type="number" placeholder="0"
+                                                                                                                value={item.rate || ''}
+                                                                                                                onChange={(e) => formik.setFieldValue(`${basePath}[${realIdx}].rate`, parseFloat(e.target.value) || 0)}
+                                                                                                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', bgcolor: '#fff' } }} />
+                                                                                                        </TableCell>
+                                                                                                        <TableCell sx={{ width: '20%' }}>
+                                                                                                            <TextField fullWidth size="small" type="number" placeholder="0"
+                                                                                                                value={item.transportRate || ''}
+                                                                                                                onChange={(e) => formik.setFieldValue(`${basePath}[${realIdx}].transportRate`, parseFloat(e.target.value) || 0)}
+                                                                                                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px', bgcolor: '#fff' } }} />
+                                                                                                        </TableCell>
+                                                                                                    </>
+                                                                                                )}
+                                                                                                <TableCell sx={{ width: '15%' }}>
+                                                                                                    <Select fullWidth size="small" value={item.uom || 'TONS'}
+                                                                                                        onChange={(e) => formik.setFieldValue(`${basePath}[${realIdx}].uom`, e.target.value)}
+                                                                                                        sx={{ borderRadius: '8px', bgcolor: '#fff' }}>
+                                                                                                        <MenuItem value="TONS">TONS</MenuItem>
+                                                                                                        <MenuItem value="UNIT">UNIT</MenuItem>
+                                                                                                    </Select>
+                                                                                                </TableCell>
+                                                                                                <TableCell align="center">
+                                                                                                    <Checkbox size="small" checked={!!item.gstInclusive}
+                                                                                                        onChange={(e) => formik.setFieldValue(`${basePath}[${realIdx}].gstInclusive`, e.target.checked)} />
+                                                                                                </TableCell>
+                                                                                            </TableRow>
+                                                                                        );
+                                                                                    })}
+                                                                                </TableBody>
+                                                                            </Table>
+                                                                        </TableContainer>
+                                                                    </Card>
+                                                                );
+                                                            })}
+                                                        </Box>
+                                                    );
+                                                })()}
                                             </Box>
                                         )}
 
@@ -840,43 +1169,94 @@ export default function CustomerPage() {
                                         <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
                                             <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                                                 <Box sx={{ width: 4, height: 16, backgroundColor: '#10B981', borderRadius: 2 }} />
-                                                Delivery Sites ({selectedCustomer.sites?.length || 0})
+                                                Pricing Configurations
                                             </Typography>
-                                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                                {(selectedCustomer.sites || []).map((site, idx) => (
-                                                    <Box key={idx} sx={{ p: 2, border: '1px solid #F3F4F6', borderRadius: '12px' }}>
-                                                        <Typography sx={{ fontWeight: 700, color: '#0057FF' }}>{site.siteName}</Typography>
-                                                        <Typography variant="body2" sx={{ color: '#6B7280' }}>{site.phone}</Typography>
-                                                        <Box sx={{ mt: 2 }}>
-                                                            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: '8px', border: '1px solid #E5E7EB', overflow: 'hidden' }}>
-                                                                <Table size="small">
-                                                                    <TableHead sx={{ bgcolor: '#F9FAFB' }}>
-                                                                        <TableRow>
-                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>PRODUCT</TableCell>
-                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>TRANSPORT</TableCell>
-                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>RATE</TableCell>
-                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>UOM</TableCell>
-                                                                        </TableRow>
-                                                                    </TableHead>
-                                                                    <TableBody>
-                                                                        {site.prices?.map((p, pIdx) => {
-                                                                            const product = products.find(pr => pr.id === p.productId);
-                                                                            return (
-                                                                                <TableRow key={pIdx} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                                                                                    <TableCell sx={{ fontSize: '11px', fontWeight: 600 }}>{product?.name || p.productId}</TableCell>
-                                                                                    <TableCell sx={{ fontSize: '11px', color: '#6B7280' }}>{p.transportRate > 0 ? `₹${p.transportRate}` : 'None'}</TableCell>
-                                                                                    <TableCell sx={{ fontSize: '11px', fontWeight: 700 }}>₹{p.rate}</TableCell>
-                                                                                    <TableCell sx={{ fontSize: '10px', color: '#9CA3AF' }}>{p.uom || 'TONS'}</TableCell>
-                                                                                </TableRow>
-                                                                            );
-                                                                        })}
-                                                                    </TableBody>
-                                                                </Table>
-                                                            </TableContainer>
+                                            {(() => {
+                                                const sites = selectedCustomer.sites || [];
+                                                const companiesList = allCompanies.length > 0 ? allCompanies : userCompanyInfo.map(c => ({ id: c.companyId, name: c.companyName }));
+                                                
+                                                let hasAnyPrices = false;
+
+                                                // Build an array of entities to render (Sites only for Corporate)
+                                                const entitesToRender = sites.map(s => ({ id: s.id || s.siteName, title: s.siteName, items: s.prices || [] }));
+
+                                                const cards = entitesToRender.flatMap((entity, sIdx) => {
+                                                    const entityPrices = entity.items;
+                                                    if (!entityPrices || entityPrices.length === 0) return [];
+                                                    
+                                                    const groups = {};
+                                                    entityPrices.forEach(p => {
+                                                        const key = `${p.companyId}__${p.branchId}`;
+                                                        if (!groups[key]) groups[key] = { companyId: p.companyId, branchId: p.branchId, items: [] };
+                                                        groups[key].items.push(p);
+                                                    });
+                                                    
+                                                    const groupList = Object.values(groups).filter(g =>
+                                                        g.items.some(p => (p.rate || 0) > 0 || (p.transportRate || 0) > 0)
+                                                    );
+
+                                                    if (groupList.length > 0) hasAnyPrices = true;
+
+                                                    return groupList.map((group, gIdx) => {
+                                                        const companyName = companiesList.find(c => c.id === group.companyId)?.name 
+                                                                         || selectedCustomer.companyName 
+                                                                         || companiesList[0]?.name 
+                                                                         || 'Unknown Company';
+                                                        return (
+                                                            <Card key={`entity-${sIdx}-${gIdx}`} sx={{ mb: 2, borderRadius: '12px', overflow: 'hidden', border: '1px solid #E2E8F0', opacity: entity.id === 'base' ? 0.8 : 1 }}>
+                                                                <Box sx={{ px: 2.5, py: 1.5, background: entity.id === 'base' ? 'linear-gradient(135deg, #1E293B 0%, #334155 100%)' : 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>
+                                                                    <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#22C55E' }} />
+                                                                    <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: '13px', display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                        {companyName} <PriceBranchName branchId={group.branchId} />
+                                                                    </Typography>
+                                                                    <Box sx={{ color: '#94A3B8' }}>→</Box>
+                                                                    <Typography sx={{ color: '#38BDF8', fontWeight: 700, fontSize: '13px' }}>
+                                                                        {entity.title}
+                                                                    </Typography>
+                                                                    <Box sx={{ px: 1, py: 0.2, ml: 'auto', borderRadius: '6px', bgcolor: 'rgba(255,255,255,0.15)', fontSize: '10px', fontWeight: 600, color: '#94A3B8' }}>
+                                                                        {group.items.length} products
+                                                                    </Box>
+                                                                </Box>
+                                                                <TableContainer>
+                                                                    <Table size="small">
+                                                                        <TableHead sx={{ bgcolor: '#F9FAFB' }}>
+                                                                            <TableRow>
+                                                                                <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>PRODUCT</TableCell>
+                                                                                <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>RATE</TableCell>
+                                                                                <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>TRANSPORT</TableCell>
+                                                                                <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>UOM</TableCell>
+                                                                            </TableRow>
+                                                                        </TableHead>
+                                                                        <TableBody>
+                                                                            {group.items.map((p, pIdx) => {
+                                                                                const product = products.find(pr => pr.id === p.productId);
+                                                                                return (
+                                                                                    <TableRow key={pIdx} sx={{ '&:last-child td': { border: 0 } }}>
+                                                                                        <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#111827' }}>{product?.name || p.productId}</TableCell>
+                                                                                        <TableCell sx={{ fontWeight: 700, fontSize: '12px', color: '#059669' }}>₹{p.rate || 0}</TableCell>
+                                                                                        <TableCell sx={{ fontSize: '12px', color: '#6B7280' }}>{p.transportRate > 0 ? `₹${p.transportRate}` : '—'}</TableCell>
+                                                                                        <TableCell sx={{ fontSize: '11px', color: '#9CA3AF' }}>{p.uom || 'TONS'}</TableCell>
+                                                                                    </TableRow>
+                                                                                );
+                                                                            })}
+                                                                        </TableBody>
+                                                                    </Table>
+                                                                </TableContainer>
+                                                            </Card>
+                                                        );
+                                                    });
+                                                });
+                                                
+                                                if (!hasAnyPrices) {
+                                                    return (
+                                                        <Box sx={{ textAlign: 'center', py: 3, color: '#9CA3AF' }}>
+                                                            <Typography sx={{ fontStyle: 'italic', fontSize: '13px' }}>No pricing configurations found</Typography>
                                                         </Box>
-                                                    </Box>
-                                                ))}
-                                            </Box>
+                                                    );
+                                                }
+                                                return cards;
+
+                                            })()}
                                         </Card>
                                     ) : (
                                         <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
@@ -884,37 +1264,69 @@ export default function CustomerPage() {
                                                 <Box sx={{ width: 4, height: 16, backgroundColor: '#10B981', borderRadius: 2 }} />
                                                 Pricing Configurations
                                             </Typography>
-                                            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: '12px', border: '1px solid #F3F4F6', overflow: 'hidden' }}>
-                                                <Table size="small">
-                                                    <TableHead sx={{ bgcolor: '#F9FAFB' }}>
-                                                        <TableRow>
-                                                            <TableCell sx={{ fontWeight: 700, py: 1.5 }}>PRODUCT</TableCell>
-                                                            <TableCell sx={{ fontWeight: 700, py: 1.5 }}>CASH RATE</TableCell>
-                                                            <TableCell sx={{ fontWeight: 700, py: 1.5 }}>CREDIT RATE</TableCell>
-                                                            <TableCell sx={{ fontWeight: 700, py: 1.5 }}>UOM</TableCell>
-                                                        </TableRow>
-                                                    </TableHead>
-                                                    <TableBody>
-                                                        {(selectedCustomer.prices || []).length > 0 ? (
-                                                            (selectedCustomer.prices || []).map((price, idx) => {
-                                                                const product = products.find(p => p.id === price.productId);
-                                                                return (
-                                                                    <TableRow key={idx} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
-                                                                        <TableCell sx={{ fontWeight: 600, color: '#111827' }}>{product?.name || price.productId}</TableCell>
-                                                                        <TableCell sx={{ fontWeight: 700, color: '#059669' }}>₹{price.cashRate}</TableCell>
-                                                                        <TableCell sx={{ fontWeight: 700, color: '#2563EB' }}>₹{price.creditRate}</TableCell>
-                                                                        <TableCell sx={{ color: '#6B7280', fontSize: '12px' }}>{price.uom || 'TONS'}</TableCell>
-                                                                    </TableRow>
-                                                                );
-                                                            })
-                                                        ) : (
-                                                            <TableRow>
-                                                                <TableCell colSpan={4} align="center" sx={{ py: 3, color: '#9CA3AF italic' }}>No pricing configured</TableCell>
-                                                            </TableRow>
-                                                        )}
-                                                    </TableBody>
-                                                </Table>
-                                            </TableContainer>
+                                            {(() => {
+                                                const prices = selectedCustomer.prices || [];
+                                                const companiesList = allCompanies.length > 0 ? allCompanies : userCompanyInfo.map(c => ({ id: c.companyId, name: c.companyName }));
+                                                // Group by companyId + branchId
+                                                const groups = {};
+                                                prices.forEach(p => {
+                                                    const key = `${p.companyId}__${p.branchId}`;
+                                                    if (!groups[key]) groups[key] = { companyId: p.companyId, branchId: p.branchId, items: [] };
+                                                    groups[key].items.push(p);
+                                                });
+                                                const groupList = Object.values(groups).filter(g =>
+                                                    g.items.some(p => (p.cashRate || 0) > 0 || (p.creditRate || 0) > 0)
+                                                );
+                                                if (groupList.length === 0) {
+                                                    return (
+                                                        <Box sx={{ textAlign: 'center', py: 3, color: '#9CA3AF' }}>
+                                                            <Typography sx={{ fontStyle: 'italic', fontSize: '13px' }}>No pricing configured</Typography>
+                                                        </Box>
+                                                    );
+                                                }
+                                                return groupList.map((group, gIdx) => {
+                                                    const companyName = companiesList.find(c => c.id === group.companyId)?.name || 'Unknown Company';
+                                                    return (
+                                                        <Card key={gIdx} sx={{ mb: 2, borderRadius: '12px', overflow: 'hidden', border: '1px solid #E2E8F0' }}>
+                                                            <Box sx={{ px: 2.5, py: 1, background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)', display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#22C55E' }} />
+                                                                <Typography sx={{ color: '#fff', fontWeight: 700, fontSize: '13px' }}>
+                                                                    {companyName}
+                                                                    <PriceBranchName branchId={group.branchId} />
+                                                                </Typography>
+                                                                <Box sx={{ px: 1, py: 0.2, borderRadius: '6px', bgcolor: 'rgba(255,255,255,0.15)', fontSize: '10px', fontWeight: 600, color: '#94A3B8' }}>
+                                                                    {group.items.length} products
+                                                                </Box>
+                                                            </Box>
+                                                            <TableContainer>
+                                                                <Table size="small">
+                                                                    <TableHead sx={{ bgcolor: '#F9FAFB' }}>
+                                                                        <TableRow>
+                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>PRODUCT</TableCell>
+                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>CASH RATE</TableCell>
+                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>CREDIT RATE</TableCell>
+                                                                            <TableCell sx={{ fontWeight: 700, fontSize: '10px', py: 1 }}>UOM</TableCell>
+                                                                        </TableRow>
+                                                                    </TableHead>
+                                                                    <TableBody>
+                                                                        {group.items.map((price, pIdx) => {
+                                                                            const product = products.find(p => p.id === price.productId);
+                                                                            return (
+                                                                                <TableRow key={pIdx} sx={{ '&:last-child td': { border: 0 } }}>
+                                                                                    <TableCell sx={{ fontWeight: 600, fontSize: '12px', color: '#111827' }}>{product?.name || price.productId}</TableCell>
+                                                                                    <TableCell sx={{ fontWeight: 700, fontSize: '12px', color: '#059669' }}>₹{price.cashRate || 0}</TableCell>
+                                                                                    <TableCell sx={{ fontWeight: 700, fontSize: '12px', color: '#2563EB' }}>₹{price.creditRate || 0}</TableCell>
+                                                                                    <TableCell sx={{ fontSize: '11px', color: '#9CA3AF' }}>{price.uom || 'TONS'}</TableCell>
+                                                                                </TableRow>
+                                                                            );
+                                                                        })}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </TableContainer>
+                                                        </Card>
+                                                    );
+                                                });
+                                            })()}
                                         </Card>
                                     )}
                                 </Box>

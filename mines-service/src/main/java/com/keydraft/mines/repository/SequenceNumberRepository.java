@@ -21,4 +21,10 @@ public interface SequenceNumberRepository extends JpaRepository<SequenceNumber, 
             @Param("branchId") UUID branchId,
             @Param("docType") String docType,
             @Param("fy") String fy);
+
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByBranchId(java.util.UUID branchId);
+
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByCompanyId(java.util.UUID companyId);
 }

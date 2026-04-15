@@ -33,8 +33,9 @@ public class ProductController {
     @GetMapping
     public ResponseEntity<ApiResponse<PaginatedResponse<ProductResponse>>> getAllProducts(
             @RequestParam(required = false) String search,
+            @RequestParam(required = false) UUID companyId,
             @PageableDefault(size = 10) Pageable pageable) {
-        PaginatedResponse<ProductResponse> products = productService.getAllProducts(search, pageable);
+        PaginatedResponse<ProductResponse> products = productService.getAllProducts(search, companyId, pageable);
         return ResponseEntity.ok(ApiResponse.success(products, "Products fetched successfully"));
     }
 

@@ -74,17 +74,24 @@ public class ProductService {
                 .collect(Collectors.toList());
     }
 
-    public PaginatedResponse<ProductResponse> getAllProducts(String search, Pageable pageable) {
+    public PaginatedResponse<ProductResponse> getAllProducts(String search, UUID companyId, Pageable pageable) {
         Specification<Product> spec = (root, query, cb) -> {
-            if (search == null || search.isEmpty()) {
-                return cb.conjunction();
+            java.util.List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+
+            if (search != null && !search.isEmpty()) {
+                String pattern = "%" + search.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        cb.like(cb.lower(root.get("shortName")), pattern),
+                        cb.like(cb.lower(root.get("hsnCode")), pattern)
+                ));
             }
-            String pattern = "%" + search.toLowerCase() + "%";
-            return cb.or(
-                    cb.like(cb.lower(root.get("name")), pattern),
-                    cb.like(cb.lower(root.get("shortName")), pattern),
-                    cb.like(cb.lower(root.get("hsnCode")), pattern)
-            );
+
+            if (companyId != null) {
+                predicates.add(cb.equal(root.get("company").get("id"), companyId));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
         Page<Product> page = productRepository.findAll(spec, pageable);

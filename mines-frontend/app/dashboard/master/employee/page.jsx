@@ -13,7 +13,8 @@ import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon, FileDownloadOutlined as DownloadIcon,
     PrintOutlined as PrintIcon, SortOutlined as SortIcon, VisibilityOutlined as ViewIcon,
     MoreVertOutlined as ActionIcon, CloudUploadOutlined as UploadIcon,
-    EditOutlined as EditIcon, DeleteOutline as DeleteIcon
+    EditOutlined as EditIcon, DeleteOutline as DeleteIcon,
+    SwapHorizOutlined as TransferIcon, HistoryOutlined as HistoryIcon
 } from "@mui/icons-material";
 import { useRouter } from "next/navigation";
 import { palette } from "@/theme";
@@ -27,6 +28,11 @@ import { useApp } from "@/context/AppContext";
 export default function EmployeePage() {
     const { user: globalUser, selectedCompany, selectedBranch } = useApp();
     const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
+    
+    // Site Authorization Helpers
+    const associations = globalUser?.companies || [];
+    const defaultCompanyId = selectedCompany?.id || selectedCompany?.companyId || (associations.length > 0 ? associations[0].companyId : "");
+    const defaultBranchId = selectedBranch?.id || (associations.length > 0 ? associations[0].branchId : "");
 
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
@@ -61,6 +67,14 @@ export default function EmployeePage() {
     const [viewModalOpen, setViewModalOpen] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
 
+    // Transfer State
+    const [transferModalOpen, setTransferModalOpen] = useState(false);
+    const [transferDate, setTransferDate] = useState(new Date().toISOString().split('T')[0]);
+    const [transferTargetBranchId, setTransferTargetBranchId] = useState("");
+    const [transferTargetCompanyId, setTransferTargetCompanyId] = useState("");
+    const [historyModalOpen, setHistoryModalOpen] = useState(false);
+    const [employeeHistory, setEmployeeHistory] = useState([]);
+
     const handleChangePage = (event, newPage) => setPage(newPage);
     const handleChangeRowsPerPage = (event) => {
         setRowsPerPage(parseInt(event.target.value, 10));
@@ -86,6 +100,7 @@ export default function EmployeePage() {
     const initialValues = {
         firstName: "", lastName: "", gender: "male", role: "", companyId: "", branchId: "",
         companyIds: [],
+        branchIds: [],
         dateOfBirth: "", dateOfJoining: "", addressLine1: "", addressLine2: "", district: "", state: "",
         pincode: "", contactNumber: "", username: "", password: "",
         salaryType: "MONTHLY", basicSalary: 0, bankAccountHolderName: "", bankName: "",
@@ -125,19 +140,16 @@ export default function EmployeePage() {
             then: (schema) => schema.required("Basic salary is required"),
             otherwise: (schema) => schema.optional()
         }),
-        companyId: Yup.string().when("role", {
-            is: (val) => val !== "PARTNER",
-            then: (schema) => schema.required("Company is required"),
-            otherwise: (schema) => schema.optional()
-        }),
-        branchId: Yup.string().when("role", {
-            is: (val) => val !== "PARTNER",
-            then: (schema) => schema.required("Branch is required"),
-            otherwise: (schema) => schema.optional()
-        }),
+        companyId: Yup.string().optional(),
+        branchId: Yup.string().optional(),
         companyIds: Yup.array().when("role", {
             is: "PARTNER",
             then: (schema) => schema.min(1, "Select at least one company"),
+            otherwise: (schema) => schema.optional()
+        }),
+        branchIds: Yup.array().when("role", {
+            is: "MANAGER",
+            then: (schema) => schema.min(1, "Select at least one branch"),
             otherwise: (schema) => schema.optional()
         }),
         ifscCode: Yup.string().matches(ifscRegex, "Invalid IFSC format"),
@@ -210,6 +222,7 @@ export default function EmployeePage() {
                     id: editingId || null,
                     companyId: values.companyId || null,
                     branchId: values.branchId || null,
+                    branchIds: values.role === 'MANAGER' ? values.branchIds : null,
                     basicSalary: parseFloat(values.basicSalary) || 0,
                     active: true
                 };
@@ -239,7 +252,26 @@ export default function EmployeePage() {
     });
 
     const filteredRoles = React.useMemo(() => {
-        const list = roles.filter(role => role.rank > currentUserRank);
+        // Enforce rank hierarchy
+        let list = roles.filter(role => role.rank > currentUserRank);
+        
+        // Guarantee specific roles are options even if not seeded yet
+        if (!list.some(role => role.name?.toUpperCase() === 'ADMIN') && currentUserRank < 1) {
+            list = [{ name: 'ADMIN', rank: 0 }, ...list];
+        }
+        if (!list.some(role => role.name?.toUpperCase() === 'PARTNER') && currentUserRank < 2) {
+            list = [...list, { name: 'PARTNER', rank: 1 }];
+        }
+        if (!list.some(role => role.name?.toUpperCase() === 'MANAGER') && currentUserRank < 3) {
+            list = [...list, { name: 'MANAGER', rank: 2 }];
+        }
+        if (!list.some(role => role.name?.toUpperCase() === 'ACCOUNTANT')) {
+            list = [...list, { name: 'ACCOUNTANT', rank: 3 }];
+        }
+        if (!list.some(role => role.name?.toUpperCase() === 'OPERATOR')) {
+            list = [...list, { name: 'OPERATOR', rank: 6 }];
+        }
+        
         return list;
     }, [roles, currentUserRank]);
 
@@ -319,7 +351,8 @@ export default function EmployeePage() {
             ifscCode: (employee.ifscCode || "").toUpperCase(),
             aadhaarNumber: employee.aadhaarNumber ? String(employee.aadhaarNumber) : "",
             panNumber: (employee.panNumber || "").toUpperCase(),
-            drivingLicenseNumber: (employee.drivingLicenseNumber || "").toUpperCase()
+            drivingLicenseNumber: (employee.drivingLicenseNumber || "").toUpperCase(),
+            branchIds: employee.branchIds || (employee.branchId ? [employee.branchId] : [])
         });
 
         setFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
@@ -374,6 +407,41 @@ export default function EmployeePage() {
         setExistingFiles({ passbook: null, aadhaar: null, pan: null, drivingLicense: null });
     };
 
+    const handleOpenTransfer = (employee) => {
+        setSelectedEmployee(employee);
+        setTransferTargetCompanyId(employee.company?.id || "");
+        setTransferTargetBranchId(employee.branch?.id || "");
+        setTransferModalOpen(true);
+    };
+
+    const handleTransferSubmit = async () => {
+        if (!selectedEmployee || !transferTargetBranchId) return;
+        try {
+            const response = await employeeApi.transfer(selectedEmployee.id, transferTargetBranchId, transferDate);
+            if (response.success) {
+                setSnackbar({ open: true, message: "Employee transferred successfully", severity: "success" });
+                setTransferModalOpen(false);
+                fetchEmployees();
+            }
+        } catch (error) {
+            console.error("Transfer error:", error);
+            setSnackbar({ open: true, message: "Transfer failed", severity: "error" });
+        }
+    };
+
+    const handleViewHistory = async (employee) => {
+        setSelectedEmployee(employee);
+        try {
+            const response = await employeeApi.getHistory(employee.id);
+            if (response.success) {
+                setEmployeeHistory(response.data);
+                setHistoryModalOpen(true);
+            }
+        } catch (error) {
+            setSnackbar({ open: true, message: "Failed to fetch history", severity: "error" });
+        }
+    };
+
     const generatePassword = () => {
         const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%";
         let password = "";
@@ -401,8 +469,6 @@ export default function EmployeePage() {
             
             if (isPartner) {
                 step1Fields.push('companyIds');
-            } else {
-                step1Fields.push('companyId', 'branchId');
             }
             
             const touchedFields = step1Fields.reduce((acc, field) => ({ ...acc, [field]: true }), {});
@@ -425,8 +491,6 @@ export default function EmployeePage() {
             const requiredStep0 = ['firstName', 'lastName', 'gender', 'role', 'contactNumber', 'addressLine1', 'district', 'state', 'pincode', 'dateOfBirth', 'dateOfJoining'];
             if (isPartner) {
                 requiredStep0.push('companyIds');
-            } else {
-                requiredStep0.push('companyId', 'branchId');
             }
             
             return requiredStep0.every(field => {
@@ -502,6 +566,27 @@ export default function EmployeePage() {
     };
 
     const renderField = (label, placeholder, isSelect = false, type = "text", field = "") => {
+        const FIELD_LIMITS = {
+            firstName: 30,
+            lastName: 30,
+            addressLine1: 50,
+            addressLine2: 50,
+            district: 50,
+            state: 50,
+            bankAccountHolderName: 50,
+            bankName: 50,
+            contactNumber: 10,
+            aadhaarNumber: 12,
+            bankAccountNumber: 18,
+            pincode: 6,
+            basicSalary: 10,
+            drivingLicenseNumber: 15,
+            panNumber: 10,
+            ifscCode: 11,
+            username: 30
+        };
+        const limit = FIELD_LIMITS[field] || (field.includes('addressLine') ? 50 : 255);
+
         const value = formik.values[field] || "";
         const error = formik.touched[field] && formik.errors[field];
 
@@ -527,6 +612,7 @@ export default function EmployeePage() {
         if (field === "role") options = filteredRoles.map(r => ({ label: r.name, value: r.name }));
         else if (field === "companyId") options = companies.map(c => ({ label: c.name, value: c.id }));
         else if (field === "branchId") options = availableBranches.map(b => ({ label: b.name, value: b.id }));
+        else if (field === "branchIds") options = availableBranches.map(b => ({ label: b.name, value: b.id }));
         else if (field === "companyIds") options = companies.map(c => ({ label: c.name, value: c.id }));
         else if (field === "salaryType") options = [{ label: "Monthly", value: "MONTHLY" }, { label: "Daily", value: "DAILY" }, { label: "Hourly", value: "HOURLY" }];
 
@@ -535,6 +621,7 @@ export default function EmployeePage() {
                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>{label}</Typography>
                 {isSelect ? (
                     <Select
+                        multiple={field === "branchIds" || field === "companyIds"}
                         fullWidth size="small"
                         name={field}
                         value={value}
@@ -544,6 +631,7 @@ export default function EmployeePage() {
                                 const company = companies.find(c => c.id === e.target.value);
                                 setAvailableBranches(company ? company.branches : []);
                                 formik.setFieldValue("branchId", "");
+                                formik.setFieldValue("branchIds", []);
                             }
                         }}
                         onBlur={formik.handleBlur}
@@ -569,50 +657,39 @@ export default function EmployeePage() {
                             const numericOnlyFields = ['contactNumber', 'aadhaarNumber', 'bankAccountNumber', 'pincode', 'basicSalary'];
                             const alphanumericFields = ['drivingLicenseNumber', 'panNumber', 'ifscCode'];
 
+                            let val = e.target.value;
+                            if (val.length > limit) val = val.slice(0, limit);
+
+                            if (field !== "password" && field !== "username") {
+                                val = val.toUpperCase();
+                            }
+
                             if (letterOnlyFields.includes(field)) {
-                                const val = e.target.value.replace(/[^a-zA-Z\s]/g, '');
+                                val = val.replace(/[^A-Za-z\s]/g, '');
                                 formik.setFieldValue(field, val);
                             } else if (numericOnlyFields.includes(field)) {
-                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                val = val.replace(/[^0-9]/g, '');
                                 formik.setFieldValue(field, val);
                             } else if (alphanumericFields.includes(field)) {
                                 // Allow letters, numbers, and common delimiters for DL/IFSC
-                                const val = e.target.value.replace(/[^a-zA-Z0-9\s-]/g, '').toUpperCase();
+                                val = val.replace(/[^A-Za-z0-9\s-]/g, '');
                                 formik.setFieldValue(field, val);
-                            } else if (field === "password") {
-                                // Prevent manual typing for password field
-                                return;
                             } else {
-                                formik.handleChange(e);
+                                formik.setFieldValue(field, val);
+                                if (field === "username") {
+                                    if (!formik.values.password || formik.values.password === formik.values.username) {
+                                        formik.setFieldValue("password", val);
+                                    }
+                                }
                             }
                         }}
                         onBlur={formik.handleBlur}
                         error={!!error}
                         helperText={error}
-                        InputProps={field === "password" ? {
-                            endAdornment: (
-                                <InputAdornment position="end">
-                                    <Button
-                                        size="small"
-                                        onClick={generatePassword}
-                                        sx={{
-                                            fontSize: '10px',
-                                            minWidth: 'auto',
-                                            color: '#0057FF',
-                                            fontWeight: 700,
-                                            mr: 1,
-                                            '&:hover': { backgroundColor: 'rgba(0, 87, 255, 0.04)' }
-                                        }}
-                                    >
-                                        GENERATE
-                                    </Button>
-                                </InputAdornment>
-                            )
-                        } : {}}
-                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: field === "password" ? '#F3F4F6' : '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
+                        InputProps={{}}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB', '& .MuiOutlinedInput-notchedOutline': { border: '1px solid #F3F4F6' } } }}
                         inputProps={{
-                            readOnly: field === "password",
-                            ...(field.includes('addressLine') ? { maxLength: 50 } : {})
+                            maxLength: limit
                         }}
                     />
                 )}
@@ -657,16 +734,24 @@ export default function EmployeePage() {
                             {fileName}
                         </Button>
                     </label>
-                    {hasExisting && !isUploaded && (
+                    {(hasExisting || isUploaded) && (
                         <Button
                             variant="outlined"
                             size="small"
-                            onClick={() => window.open(serverPath + existingFiles[field], "_blank")}
+                            onClick={() => {
+                                if (isUploaded) {
+                                    window.open(URL.createObjectURL(files[field]), "_blank");
+                                } else {
+                                    window.open(serverPath + existingFiles[field], "_blank");
+                                }
+                            }}
                             sx={{
                                 borderRadius: '8px',
                                 border: '1px solid #10B981',
                                 color: '#10B981',
                                 minWidth: '60px',
+                                lineHeight: 1,
+                                height: 'auto',
                                 '&:hover': { border: '1px solid #059669', backgroundColor: 'rgba(16, 185, 129, 0.04)' }
                             }}
                         >
@@ -715,7 +800,20 @@ export default function EmployeePage() {
                         <Box sx={{ width: itemWidth }}>{renderField("Last Name", "Enter the last name", false, "text", "lastName")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Gender", "", false, "radio", "gender")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Role", "Select role", true, "text", "role")}</Box>
-                        {formik.values.role === 'PARTNER' ? (
+                        
+                        {(formik.values.role && formik.values.role !== 'PARTNER') && (
+                            <>
+                                <Box sx={{ width: itemWidth }}>{renderField("Select Company", "Choose Company", true, "text", "companyId")}</Box>
+                                <Box sx={{ width: itemWidth }}>
+                                    {formik.values.role === 'MANAGER' 
+                                        ? renderField("Manage Branches", "Choose Branches", true, "text", "branchIds")
+                                        : renderField("Select Branch", "Choose Branch", true, "text", "branchId")
+                                    }
+                                </Box>
+                            </>
+                        )}
+
+                        {formik.values.role === 'PARTNER' && (
                             <Box sx={{ width: '100%' }}>
                                 <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Associated Companies</Typography>
                                 <Select
@@ -731,13 +829,6 @@ export default function EmployeePage() {
                                     ))}
                                 </Select>
                             </Box>
-                        ) : (
-                            (userRole === 'ROLE_ADMIN' || userRole === 'ADMIN') && (
-                                <>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Company", "Select company", true, "text", "companyId")}</Box>
-                                    <Box sx={{ width: itemWidth }}>{renderField("Branch", "Select branch", true, "text", "branchId")}</Box>
-                                </>
-                            )
                         )}
                         <Box sx={{ width: itemWidth }}>{renderField("Date of Birth", "yyyy-mm-dd", false, "date", "dateOfBirth")}</Box>
                         <Box sx={{ width: itemWidth }}>{renderField("Date of Joining", "yyyy-mm-dd", false, "date", "dateOfJoining")}</Box>
@@ -918,7 +1009,16 @@ export default function EmployeePage() {
                                     <TableCell>{employee.address?.pincode}</TableCell>
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                                            <Tooltip title="View">
+                                            <Tooltip title="View History">
+                                                <IconButton 
+                                                    size="small" 
+                                                    sx={{ color: '#F59E0B' }}
+                                                    onClick={() => handleViewHistory(employee)}
+                                                >
+                                                    <HistoryIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="View Profile">
                                                 <IconButton 
                                                     size="small" 
                                                     sx={{ color: palette.primary.main }}
@@ -929,6 +1029,15 @@ export default function EmployeePage() {
                                             </Tooltip>
                                             {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
                                                 <>
+                                                    <Tooltip title="Transfer / Deploy">
+                                                        <IconButton
+                                                            size="small"
+                                                            sx={{ color: '#10B981' }}
+                                                            onClick={() => handleOpenTransfer(employee)}
+                                                        >
+                                                            <TransferIcon fontSize="small" />
+                                                        </IconButton>
+                                                    </Tooltip>
                                                     <Tooltip title="Edit">
                                                         <IconButton
                                                             size="small"
@@ -1120,20 +1229,179 @@ export default function EmployeePage() {
                                 onClick={handleConfirmDelete}
                                 variant="contained"
                                 sx={{ 
-                                    borderRadius: '12px', 
-                                    textTransform: 'none', 
-                                    fontWeight: 600, 
-                                    backgroundColor: '#EF4444', 
-                                    px: 4,
-                                    py: 1,
-                                    '&:hover': { backgroundColor: '#DC2626' },
-                                    boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)'
+                                    borderRadius: '12px', px: 4, py: 1, textTransform: 'none', fontWeight: 600, backgroundColor: '#EF4444', 
+                                    '&:hover': { backgroundColor: '#DC2626' } 
                                 }}
                             >
-                                Delete
+                                Delete Now
                             </Button>
                         </Box>
                     </Box>
+                </DialogContent>
+            </Dialog>
+
+            {/* Transfer Modal */}
+            <Dialog 
+                open={transferModalOpen} 
+                onClose={() => setTransferModalOpen(false)}
+                maxWidth="sm"
+                fullWidth
+                sx={{
+                    '& .MuiDialog-container': {
+                        marginLeft: { md: '280px' },
+                        width: { md: 'calc(100% - 280px)' }
+                    }
+                }}
+                PaperProps={{ sx: { borderRadius: '24px', p: 2 } }}
+            >
+                <DialogContent>
+                    <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#111827' }}>Deploy Employee</Typography>
+                    <Typography variant="body2" sx={{ color: '#6B7280', mb: 3 }}>Record a new company assignment for {selectedEmployee?.firstName}.</Typography>
+                    
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                        <Box>
+                            <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Select Company</Typography>
+                            <Select
+                                fullWidth size="small"
+                                value={transferTargetCompanyId}
+                                onChange={(e) => {
+                                    setTransferTargetCompanyId(e.target.value);
+                                    const comp = companies.find(c => c.id === e.target.value);
+                                    setTransferTargetBranchId("");
+                                }}
+                                sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB' }}
+                            >
+                                <MenuItem value="">Select Company</MenuItem>
+                                {companies.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+                            </Select>
+                        </Box>
+
+                        <Box>
+                            <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Select Branch</Typography>
+                            <Select
+                                fullWidth size="small"
+                                value={transferTargetBranchId}
+                                onChange={(e) => setTransferTargetBranchId(e.target.value)}
+                                disabled={!transferTargetCompanyId}
+                                sx={{ borderRadius: '12px', backgroundColor: '#F9FAFB' }}
+                            >
+                                <MenuItem value="">Select Branch</MenuItem>
+                                {companies.find(c => c.id === transferTargetCompanyId)?.branches?.map(b => (
+                                    <MenuItem key={b.id} value={b.id}>{b.name}</MenuItem>
+                                ))}
+                            </Select>
+                        </Box>
+
+                        <Box>
+                            <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Transfer Date</Typography>
+                            <TextField
+                                fullWidth type="date" size="small"
+                                value={transferDate}
+                                onChange={(e) => setTransferDate(e.target.value)}
+                                sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px', backgroundColor: '#F9FAFB' } }}
+                            />
+                        </Box>
+
+                        <Button
+                            fullWidth variant="contained"
+                            onClick={handleTransferSubmit}
+                            disabled={!transferTargetBranchId || !transferDate}
+                            sx={{ mt: 2, py: 1.5, borderRadius: '12px', backgroundColor: '#2D3FE2', fontWeight: 600, '&:hover': { backgroundColor: '#1E2BB8' } }}
+                        >
+                            Deploy Now
+                        </Button>
+                    </Box>
+                </DialogContent>
+            </Dialog>
+
+            {/* History Modal */}
+            <Dialog 
+                open={historyModalOpen} 
+                onClose={() => setHistoryModalOpen(false)}
+                maxWidth="md"
+                fullWidth
+                sx={{
+                    '& .MuiDialog-container': {
+                        marginLeft: { md: '280px' },
+                        width: { md: 'calc(100% - 280px)' }
+                    }
+                }}
+                PaperProps={{ sx: { borderRadius: '24px', p: 2 } }}
+            >
+                <DialogContent>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                        <Box>
+                            <Typography variant="h5" sx={{ fontWeight: 800, color: '#111827' }}>Employment History</Typography>
+                            <Typography variant="body2" sx={{ color: '#6B7280' }}>Timeline for {selectedEmployee?.firstName} {selectedEmployee?.lastName}</Typography>
+                        </Box>
+                        <IconButton onClick={() => setHistoryModalOpen(false)}><ActionIcon /></IconButton>
+                    </Box>
+
+                    <TableContainer sx={{ maxHeight: 400 }}>
+                        <Table stickyHeader>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell sx={{ fontWeight: 700 }}>Company</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>Branch</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>Start Date</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>End Date</TableCell>
+                                    <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {employeeHistory.map((h, index) => {
+                                    const today = new Date();
+                                    today.setHours(0, 0, 0, 0);
+                                    
+                                    let start = new Date();
+                                    if (h.startDate) {
+                                        const p = h.startDate.split('-');
+                                        start = new Date(p[0], p[1] - 1, p[2]);
+                                    }
+                                    start.setHours(0, 0, 0, 0);
+                                    
+                                    let end = null;
+                                    if (h.endDate && h.endDate !== '-' && h.endDate !== 'Present') {
+                                        const p = h.endDate.split('-');
+                                        end = new Date(p[0], p[1] - 1, p[2]);
+                                        end.setHours(0, 0, 0, 0);
+                                    }
+                                    
+                                    let statusLabel = 'ACTIVE';
+                                    let bgColor = '#EBFDF5';
+                                    let color = '#10B981';
+                                    
+                                    if (start > today) {
+                                        statusLabel = 'SCHEDULED';
+                                        bgColor = '#FEF3C7';
+                                        color = '#D97706';
+                                    } else if (end && end < today) {
+                                        statusLabel = 'COMPLETED';
+                                        bgColor = '#F3F4F6';
+                                        color = '#6B7280';
+                                    }
+
+                                    return (
+                                        <TableRow key={index}>
+                                            <TableCell sx={{ fontWeight: 600 }}>{h.companyName || h.company?.name || 'N/A'}</TableCell>
+                                            <TableCell>{h.branchName || h.branch?.name || 'N/A'}</TableCell>
+                                            <TableCell>{h.startDate}</TableCell>
+                                            <TableCell>{h.endDate || '-'}</TableCell>
+                                            <TableCell>
+                                                <Box sx={{ 
+                                                    display: 'inline-block', px: 1.5, py: 0.5, borderRadius: '12px', fontSize: '12px', fontWeight: 700,
+                                                    backgroundColor: bgColor,
+                                                    color: color
+                                                }}>
+                                                    {statusLabel}
+                                                </Box>
+                                            </TableCell>
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
                 </DialogContent>
             </Dialog>
 

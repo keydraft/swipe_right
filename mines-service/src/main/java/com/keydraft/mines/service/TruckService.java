@@ -1,16 +1,13 @@
 package com.keydraft.mines.service;
 
-import com.keydraft.mines.dto.PaginatedResponse;
-import com.keydraft.mines.dto.TruckRequest;
-import com.keydraft.mines.dto.TruckResponse;
-import com.keydraft.mines.entity.Customer;
-import com.keydraft.mines.entity.Transporter;
-import com.keydraft.mines.entity.Truck;
+import com.keydraft.mines.dto.*;
+import com.keydraft.mines.entity.*;
 import com.keydraft.mines.repository.BranchRepository;
 import com.keydraft.mines.repository.CompanyRepository;
 import com.keydraft.mines.repository.CustomerRepository;
 import com.keydraft.mines.repository.TransporterRepository;
 import com.keydraft.mines.repository.TruckRepository;
+import com.keydraft.mines.repository.TruckAssignmentRepository;
 import jakarta.persistence.criteria.JoinType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +34,7 @@ public class TruckService {
     private final FileStorageService fileStorageService;
     private final CompanyRepository companyRepository;
     private final BranchRepository branchRepository;
+    private final TruckAssignmentRepository assignmentRepository;
 
     @Transactional
     public TruckResponse upsertTruckWithFiles(
@@ -127,17 +125,36 @@ public class TruckService {
         return truckRepository.findAll().stream().map(this::mapToResponse).collect(Collectors.toList());
     }
 
-    public PaginatedResponse<TruckResponse> getAllTrucks(String search, Pageable pageable) {
+    public PaginatedResponse<TruckResponse> getAllTrucks(String search, UUID companyId, UUID branchId, Pageable pageable) {
         Specification<Truck> spec = (root, query, cb) -> {
-            if (search == null || search.isEmpty()) {
-                return cb.conjunction();
+            java.util.List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+
+            if (search != null && !search.isEmpty()) {
+                String pattern = "%" + search.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("truckNo")), pattern),
+                        cb.like(cb.lower(root.get("registerName")), pattern),
+                        cb.like(cb.lower(root.join("transporter", JoinType.LEFT).get("name")), pattern),
+                        cb.like(cb.lower(root.join("customer", JoinType.LEFT).get("name")), pattern)));
             }
-            String pattern = "%" + search.toLowerCase() + "%";
-            return cb.or(
-                    cb.like(cb.lower(root.get("truckNo")), pattern),
-                    cb.like(cb.lower(root.get("registerName")), pattern),
-                    cb.like(cb.lower(root.join("transporter", JoinType.LEFT).get("name")), pattern),
-                    cb.like(cb.lower(root.join("customer", JoinType.LEFT).get("name")), pattern));
+
+            if (branchId != null) {
+                // Check assignments for this branch
+                jakarta.persistence.criteria.Subquery<UUID> subquery = query.subquery(UUID.class);
+                jakarta.persistence.criteria.Root<TruckAssignment> assignmentRoot = subquery.from(TruckAssignment.class);
+                subquery.select(assignmentRoot.get("truck").get("id"))
+                        .where(cb.equal(assignmentRoot.get("branch").get("id"), branchId));
+                predicates.add(root.get("id").in(subquery));
+            } else if (companyId != null) {
+                // Check assignments for this company
+                jakarta.persistence.criteria.Subquery<UUID> subquery = query.subquery(UUID.class);
+                jakarta.persistence.criteria.Root<TruckAssignment> assignmentRoot = subquery.from(TruckAssignment.class);
+                subquery.select(assignmentRoot.get("truck").get("id"))
+                        .where(cb.equal(assignmentRoot.get("company").get("id"), companyId));
+                predicates.add(root.get("id").in(subquery));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
         Page<Truck> page = truckRepository.findAll(spec, pageable);
@@ -159,6 +176,62 @@ public class TruckService {
         truckRepository.deleteById(id);
     }
 
+    @Transactional
+    public List<TruckAssignmentResponse> assignToBranch(TruckAssignmentRequest request) {
+        Truck truck = truckRepository.findById(request.getTruckId())
+                .orElseThrow(() -> new RuntimeException("Truck not found"));
+
+        List<UUID> branchIds = request.getBranchIds();
+        if (branchIds == null || branchIds.isEmpty()) {
+            if (request.getBranchId() != null) {
+                branchIds = List.of(request.getBranchId());
+            } else {
+                throw new RuntimeException("No branches selected for assignment");
+            }
+        }
+
+        return branchIds.stream()
+                .filter(branchId -> !assignmentRepository.existsByTruckIdAndBranchId(request.getTruckId(), branchId))
+                .map(branchId -> {
+                    Branch branch = branchRepository.findById(branchId)
+                            .orElseThrow(() -> new RuntimeException("Branch not found: " + branchId));
+                    Company company = branch.getCompany();
+
+                    TruckAssignment assignment = TruckAssignment.builder()
+                            .truck(truck)
+                            .company(company)
+                            .branch(branch)
+                            .build();
+
+                    return mapToAssignmentResponse(assignmentRepository.save(assignment));
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public void removeAssignment(UUID id) {
+        assignmentRepository.deleteById(id);
+    }
+
+    public List<TruckResponse> getTrucksForBranch(UUID branchId) {
+        return assignmentRepository.findByBranchId(branchId).stream()
+                .map(as -> mapToResponse(as.getTruck()))
+                .collect(Collectors.toList());
+    }
+
+    private TruckAssignmentResponse mapToAssignmentResponse(TruckAssignment as) {
+        return TruckAssignmentResponse.builder()
+                .id(as.getId())
+                .truckId(as.getTruck().getId())
+                .truckNo(as.getTruck().getTruckNo())
+                .companyId(as.getCompany().getId())
+                .companyName(as.getCompany().getName())
+                .branchId(as.getBranch().getId())
+                .branchName(as.getBranch().getName())
+                .active(as.isActive())
+                .build();
+    }
+
     private String generateTruckCode(UUID companyId, UUID branchId) {
         String prefix = "TRK-";
         String maxCode = truckRepository.findMaxTruckCodeByPrefix(prefix);
@@ -176,6 +249,10 @@ public class TruckService {
     }
 
     private TruckResponse mapToResponse(Truck t) {
+        List<TruckAssignmentResponse> assignments = assignmentRepository.findByTruckId(t.getId()).stream()
+                .map(this::mapToAssignmentResponse)
+                .collect(Collectors.toList());
+
         return TruckResponse.builder()
                 .id(t.getId())
                 .truckCode(t.getTruckCode())
@@ -183,6 +260,7 @@ public class TruckService {
                 .companyName(t.getCompany() != null ? t.getCompany().getName() : null)
                 .branchId(t.getBranch() != null ? t.getBranch().getId() : null)
                 .branchName(t.getBranch() != null ? t.getBranch().getName() : null)
+                .assignments(assignments)
                 .ownershipType(t.getOwnershipType())
                 .truckNo(t.getTruckNo())
                 .registerName(t.getRegisterName())

@@ -9,4 +9,9 @@ import java.util.UUID;
 
 @Repository
 public interface InvoiceRepository extends JpaRepository<Invoice, UUID>, JpaSpecificationExecutor<Invoice> {
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByBranchId(UUID branchId);
+
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByCompanyId(UUID companyId);
 }

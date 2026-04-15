@@ -36,4 +36,10 @@ public interface DeliveryChallanRepository extends JpaRepository<DeliveryChallan
     Page<DeliveryChallan> findByCompanyIdAndBranchId(UUID companyId, UUID branchId, Pageable pageable);
 
     Page<DeliveryChallan> findByCompanyIdAndBranchIdAndStatus(UUID companyId, UUID branchId, DcStatus status, Pageable pageable);
+
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByBranchId(UUID branchId);
+
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByCompanyId(UUID companyId);
 }

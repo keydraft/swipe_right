@@ -15,8 +15,5 @@ public class TransporterResponse {
     private String gstin;
     private AddressResponse address;
     private String phone;
-    private UUID companyId;
-    private String companyName;
-    private UUID branchId;
-    private String branchName;
+    private java.util.List<TransporterAssignmentResponse> assignments;
 }

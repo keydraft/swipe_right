@@ -12,6 +12,8 @@ public class CustomerPriceResponse {
     private UUID id;
     private UUID productId;
     private String productName;
+    private UUID companyId;
+    private UUID branchId;
     private Double rate;
     private Double cashRate;
     private Double creditRate;

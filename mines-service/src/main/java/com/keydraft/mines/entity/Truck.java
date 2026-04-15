@@ -31,6 +31,9 @@ public class Truck extends BaseEntity {
     @JoinColumn(name = "branch_id")
     private Branch branch;
 
+    @OneToMany(mappedBy = "truck", cascade = CascadeType.ALL, orphanRemoval = true)
+    private java.util.List<TruckAssignment> assignments;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OwnershipType ownershipType;

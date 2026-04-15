@@ -93,9 +93,9 @@ export default function PosNewEntryPage() {
         const loadData = async () => {
             try {
                 const [custRes, prodRes, truckRes] = await Promise.all([
-                    customerApi.getAll(0, 500, ""),
+                    customerApi.getAll(0, 500, "", companyId, branchId),
                     productApi.getByCompany(companyId),
-                    truckApi.getAll(0, 500, "")
+                    truckApi.getAll(0, 500, "", companyId, branchId)
                 ]);
                 if (custRes.success) {
                     const list = custRes.data?.content || custRes.data || [];

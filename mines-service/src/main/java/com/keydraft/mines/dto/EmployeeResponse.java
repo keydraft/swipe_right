@@ -43,6 +43,7 @@ public class EmployeeResponse {
     private UUID companyId;
     private List<UUID> companyIds; // Added to store the Partner's multi-company authorization list
     private UUID branchId;
+    private List<UUID> branchIds; // List of authorized branches for a specific company
     private String branchName;
     private String companyName;
     private boolean active;

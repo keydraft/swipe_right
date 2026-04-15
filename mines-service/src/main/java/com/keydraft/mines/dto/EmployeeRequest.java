@@ -61,6 +61,7 @@ public class EmployeeRequest {
     // --- HIERARCHY ---
     private UUID companyId;
     private UUID branchId;
+    private List<UUID> branchIds; // For Manager role: multi-select branches
     private List<UUID> companyIds; // For Partner role: multi-select
     
     // --- STEP 3: LOGIN ACCESS ---

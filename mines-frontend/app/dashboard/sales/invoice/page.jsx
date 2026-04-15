@@ -20,13 +20,21 @@ import { dcApi, invoiceApi, customerApi, adminApi } from "@/services/api";
 import OrganizationPicker from "@/components/OrganizationPicker";
 
 export default function CorporateInvoicingPage() {
-    const { currentUser, selectedCompany, selectedBranch } = useApp();
+    const { selectedCompany, selectedBranch } = useApp();
+    const router = useRouter();
     
     // Organization scoping
     const [org, setOrg] = useState({ 
-        companyId: selectedCompany?.id || "", 
-        branchId: (selectedBranch?.id || selectedCompany?.branchId) || "" 
+        companyId: "", 
+        branchId: "" 
     });
+
+    useEffect(() => {
+        setOrg({
+            companyId: selectedCompany?.id || selectedCompany?.companyId || "",
+            branchId: selectedBranch?.id || ""
+        });
+    }, [selectedCompany, selectedBranch]);
 
     const [customers, setCustomers] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -43,20 +51,21 @@ export default function CorporateInvoicingPage() {
     // ─── Load Corporate Customers ──────────────────────────
     useEffect(() => {
         const loadCustomers = async () => {
+            if (!org.companyId) return;
             try {
-                // Fetch all and filter client side for now, or use specific API
-                const res = await customerApi.getAll(0, 100);
+                const res = await customerApi.getAll(0, 500, "", org.companyId, org.branchId);
                 if (res.success) {
                     // Filter for CORPORATE only
                     const corps = res.data.content.filter(c => c.customerType === "CORPORATE");
                     setCustomers(corps);
+                    setSelectedCustomer(null);
                 }
             } catch (e) {
                 console.error("Error loading customers", e);
             }
         };
         loadCustomers();
-    }, []);
+    }, [org]);
 
     // ─── Search Pending DCs ────────────────────────────────
     const fetchPendingDcs = useCallback(async () => {

@@ -41,7 +41,7 @@ public class CustomerService {
                 customer.setBranch(branchRepository.findById(request.getBranchId())
                     .orElseThrow(() -> new RuntimeException("Branch not found")));
             }
-            customer.setCustomerCode(generateCustomerCode(request.getType(), request.getCompanyId(), request.getBranchId()));
+            customer.setCustomerCode(generateCustomerCode(request.getType()));
         }
 
         customer.setName(request.getName());
@@ -111,9 +111,14 @@ public class CustomerService {
     }
 
     private CustomerPrice mapToEntity(CustomerPriceRequest req, Product product, Customer customer, CustomerSite site) {
+        Company company = req.getCompanyId() != null ? companyRepository.findById(req.getCompanyId()).orElse(null) : null;
+        Branch branch = req.getBranchId() != null ? branchRepository.findById(req.getBranchId()).orElse(null) : null;
+
         return CustomerPrice.builder()
                 .customer(customer)
                 .site(site)
+                .company(company)
+                .branch(branch)
                 .product(product)
                 .rate(req.getRate())
                 .cashRate(req.getCashRate())
@@ -131,27 +136,23 @@ public class CustomerService {
 
     public PaginatedResponse<CustomerResponse> getAllCustomers(String search, UUID companyId, UUID branchId, Pageable pageable) {
         Specification<Customer> spec = (root, query, cb) -> {
-            Specification<Customer> searchSpec = (rootS, queryS, cbS) -> {
-                if (search == null || search.isEmpty()) return cbS.conjunction();
-                String pattern = "%" + search.toLowerCase() + "%";
-                return cbS.or(
-                        cbS.like(cbS.lower(rootS.get("name")), pattern),
-                        cbS.like(cbS.lower(rootS.get("phone")), pattern),
-                        cbS.like(cbS.lower(rootS.get("email")), pattern));
-            };
-            
-            Specification<Customer> orgSpec = (rootO, queryO, cbO) -> {
-                if (companyId == null) return cbO.conjunction();
-                if (branchId != null) {
-                    return cbO.and(
-                            cbO.equal(rootO.get("company").get("id"), companyId),
-                            cbO.equal(rootO.get("branch").get("id"), branchId)
-                    );
-                }
-                return cbO.equal(rootO.get("company").get("id"), companyId);
-            };
+            java.util.List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
 
-            return cb.and(searchSpec.toPredicate(root, query, cb), orgSpec.toPredicate(root, query, cb));
+            if (search != null && !search.isEmpty()) {
+                String pattern = "%" + search.toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        cb.like(cb.lower(root.get("phone")), pattern),
+                        cb.like(cb.lower(root.get("email")), pattern)));
+            }
+
+            if (branchId != null) {
+                predicates.add(cb.equal(root.get("branch").get("id"), branchId));
+            } else if (companyId != null) {
+                predicates.add(cb.equal(root.get("company").get("id"), companyId));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
         Page<Customer> page = customerRepository.findAll(spec, pageable);
@@ -218,6 +219,8 @@ public class CustomerService {
                 .id(p.getId())
                 .productId(p.getProduct().getId())
                 .productName(p.getProduct().getName())
+                .companyId(p.getCompany() != null ? p.getCompany().getId() : null)
+                .branchId(p.getBranch() != null ? p.getBranch().getId() : null)
                 .rate(p.getRate())
                 .cashRate(p.getCashRate())
                 .creditRate(p.getCreditRate())
@@ -227,14 +230,9 @@ public class CustomerService {
                 .gstInclusive(p.getGstInclusive())
                 .build();
     }
-    private String generateCustomerCode(com.keydraft.mines.entity.enums.CustomerType type, UUID companyId, UUID branchId) {
-        if (companyId == null) {
-            // Should not happen normally if multi-tenant, but for safety:
-            return "TEMP-" + UUID.randomUUID().toString().substring(0, 8);
-        }
-        
+    private String generateCustomerCode(com.keydraft.mines.entity.enums.CustomerType type) {
         String prefix = (type == com.keydraft.mines.entity.enums.CustomerType.CORPORATE) ? "CRED-" : "LOC-";
-        String maxCode = customerRepository.findMaxCustomerCodeByPrefix(prefix, companyId, branchId);
+        String maxCode = customerRepository.findMaxCustomerCodeByPrefix(prefix);
 
         int nextId = 1;
         if (maxCode != null) {

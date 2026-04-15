@@ -11,4 +11,7 @@ import java.util.UUID;
 @Repository
 public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpecificationExecutor<Product> {
     List<Product> findByCompanyId(UUID companyId);
+
+    @org.springframework.transaction.annotation.Transactional
+    void deleteByCompanyId(UUID companyId);
 }

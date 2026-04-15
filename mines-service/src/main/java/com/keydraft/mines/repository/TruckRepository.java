@@ -15,4 +15,7 @@ public interface TruckRepository extends JpaRepository<Truck, UUID>, JpaSpecific
     
     @org.springframework.data.jpa.repository.Query("SELECT MAX(t.truckCode) FROM Truck t WHERE t.truckCode LIKE :prefix%")
     String findMaxTruckCodeByPrefix(@org.springframework.data.repository.query.Param("prefix") String prefix);
+
+    java.util.List<Truck> findByCompanyId(UUID companyId);
+    java.util.List<Truck> findByBranchId(UUID branchId);
 }

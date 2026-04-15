@@ -1,21 +1,29 @@
 package com.keydraft.mines.dto;
 
 import com.keydraft.mines.entity.enums.OwnershipType;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.util.UUID;
+import java.util.List;
 
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class TruckResponse {
     private UUID id;
     private String truckCode;
+    
     private UUID companyId;
     private String companyName;
     private UUID branchId;
     private String branchName;
+    
+    private List<TruckAssignmentResponse> assignments;
     private OwnershipType ownershipType;
     private String truckNo;
     private String registerName;

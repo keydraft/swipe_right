@@ -6,7 +6,7 @@ import {
     TableContainer, TableHead, TableRow, IconButton, Button,
     TextField, InputAdornment, Tooltip, Dialog, DialogContent,
     Select, MenuItem, CircularProgress, Grid, Divider, TablePagination,
-    Snackbar, Alert, Stepper, Step, StepLabel
+    Snackbar, Alert, Stepper, Step, StepLabel, Chip
 } from "@mui/material";
 import {
     SearchOutlined as SearchIcon, AddOutlined as AddIcon,
@@ -21,32 +21,185 @@ import { truckApi, transporterApi, customerApi, adminApi } from "@/services/api"
 import { useFormik } from "formik";
 import * as Yup from "yup";
 import Cookies from "js-cookie";
+import { useApp } from "@/context/AppContext";
+import {
+    ApartmentOutlined as CompanyIcon,
+    AccountTreeOutlined as BranchIcon,
+    LocalShippingOutlined as GlobalTruckIcon,
+    CheckCircleOutline as ActiveIcon,
+    LinkOffOutlined as UnlinkIcon,
+    BusinessOutlined as FactoryIcon
+} from "@mui/icons-material";
 
-// ─── Branch Dropdown Component ────────────────────────────
-function BranchDropdown({ companyId, value, onChange, renderField }) {
-    const [branches, setBranches] = React.useState([]);
+// ─── Shared UI Components ─────────────────────────────────
 
-    React.useEffect(() => {
-        if (!companyId) { setBranches([]); return; }
-        adminApi.getBranches(companyId).then(res => {
-            if (res.success) {
-                const list = res.data || [];
-                setBranches(list);
-                // Auto-select first branch if none selected
-                if (!value && list.length > 0) {
-                    onChange(list[0].id);
-                }
-            }
-        }).catch(() => setBranches([]));
-    }, [companyId]);
+const DetailItem = ({ label, value, icon: Icon, color = palette.text.primary }) => (
+    <Box sx={{ mb: 2, display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+        {Icon && (
+            <Box sx={{
+                mt: 0.5,
+                p: 0.75,
+                borderRadius: '8px',
+                backgroundColor: 'rgba(0, 87, 255, 0.05)',
+                color: palette.primary.main,
+                display: 'flex'
+            }}>
+                <Icon sx={{ fontSize: '18px' }} />
+            </Box>
+        )}
+        <Box>
+            <Typography sx={{ fontSize: '12px', fontWeight: 600, color: palette.text.secondary, textTransform: 'uppercase', letterSpacing: '0.5px', mb: 0.3 }}>
+                {label}
+            </Typography>
+            <Typography sx={{ fontSize: '14px', fontWeight: 700, color }}>
+                {value || "-"}
+            </Typography>
+        </Box>
+    </Box>
+);
 
-    return renderField("Branch *", "Select Branch", true, "text", "branchId",
-        branches.map(b => ({ label: b.name, value: b.id }))
+const AssignBranchModal = ({ open, onClose, truckId, onAssigned }) => {
+    const [companies, setCompanies] = useState([]);
+    const [branches, setBranches] = useState([]);
+    const [selectedCompanies, setSelectedCompanies] = useState([]);
+    const [selectedBranches, setSelectedBranches] = useState([]);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    useEffect(() => {
+        if (open) {
+            adminApi.getCompanies(0, 500).then(res => setCompanies(res.data.content || []));
+        }
+    }, [open]);
+
+    useEffect(() => {
+        if (selectedCompanies.length > 0) {
+            Promise.all(selectedCompanies.map(compId => adminApi.getBranches(compId)))
+                .then(responses => {
+                    const allBranches = responses.flatMap(res => res.success ? res.data : []);
+                    const uniqueBranches = Array.from(new Map(allBranches.map(b => [b.id, b])).values());
+                    setBranches(uniqueBranches);
+                });
+        } else {
+            setBranches([]);
+            setSelectedBranches([]);
+        }
+    }, [selectedCompanies]);
+
+    const handleAssign = async () => {
+        if (selectedBranches.length === 0) return;
+        setIsSubmitting(true);
+        try {
+            await truckApi.assign({ 
+                truckId, 
+                companyIds: selectedCompanies, 
+                branchIds: selectedBranches 
+            });
+            onAssigned();
+            onClose();
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setIsSubmitting(false);
+            setSelectedCompanies([]);
+            setSelectedBranches([]);
+        }
+    };
+
+    return (
+        <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: '24px', p: 1 } }}>
+            <DialogContent>
+                <Typography variant="h5" sx={{ fontWeight: 800, mb: 3, color: '#111827' }}>Link to Branch</Typography>
+                <Grid container spacing={3}>
+                    <Grid item xs={12}>
+                        <Typography sx={{ fontSize: '13px', fontWeight: 600, mb: 1, color: '#374151' }}>Target Companies</Typography>
+                        <Select
+                            multiple
+                            fullWidth
+                            size="small"
+                            value={selectedCompanies}
+                            onChange={(e) => setSelectedCompanies(e.target.value)}
+                            renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {selected.map((id) => (
+                                        <Chip 
+                                            key={id} 
+                                            label={companies.find(c => c.id === id)?.name || id} 
+                                            size="small" 
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            sx={{ backgroundColor: '#EEF2FF', color: '#4338CA', fontWeight: 600 }}
+                                        />
+                                    ))}
+                                </Box>
+                            )}
+                            sx={{ borderRadius: '12px' }}
+                        >
+                            {companies.map(c => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+                        </Select>
+                    </Grid>
+                    <Grid item xs={12}>
+                        <Typography sx={{ fontSize: '13px', fontWeight: 600, mb: 1, color: '#374151' }}>Target Branches</Typography>
+                        <Select
+                            multiple
+                            fullWidth
+                            size="small"
+                            value={selectedBranches}
+                            onChange={(e) => setSelectedBranches(e.target.value)}
+                            disabled={selectedCompanies.length === 0}
+                            renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                    {selected.map((id) => (
+                                        <Chip 
+                                            key={id} 
+                                            label={branches.find(b => b.id === id)?.name || id} 
+                                            size="small" 
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            sx={{ backgroundColor: '#ECFDF5', color: '#059669', fontWeight: 600 }}
+                                        />
+                                    ))}
+                                </Box>
+                            )}
+                            sx={{ borderRadius: '12px' }}
+                        >
+                            {branches.map(b => (
+                                <MenuItem key={b.id} value={b.id}>
+                                    <Box>
+                                        <Typography variant="body2" sx={{ fontWeight: 600 }}>{b.name}</Typography>
+                                        <Typography variant="caption" color="text.secondary">
+                                            {companies.find(c => c.id === (b.companyId || b.company?.id))?.name}
+                                        </Typography>
+                                    </Box>
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </Grid>
+                </Grid>
+                <Box sx={{ mt: 5, display: 'flex', gap: 2 }}>
+                    <Button fullWidth onClick={onClose} sx={{ borderRadius: '12px', py: 1.5, fontWeight: 700, color: '#6B7280', textTransform: 'none' }}>Cancel</Button>
+                    <Button 
+                        fullWidth 
+                        variant="contained" 
+                        onClick={handleAssign} 
+                        disabled={selectedBranches.length === 0 || isSubmitting} 
+                        sx={{ 
+                            borderRadius: '12px', 
+                            py: 1.5, 
+                            fontWeight: 700, 
+                            textTransform: 'none',
+                            background: 'linear-gradient(135deg, #0057FF 0%, #003499 100%)',
+                            boxShadow: '0 4px 12px rgba(0, 87, 255, 0.2)'
+                        }}
+                    >
+                        {isSubmitting ? <CircularProgress size={20} color="inherit" /> : `Link Truck to ${selectedBranches.length} Sites`}
+                    </Button>
+                </Box>
+            </DialogContent>
+        </Dialog>
     );
-}
+};
 
 export default function TruckPage() {
     const userRole = typeof window !== 'undefined' ? Cookies.get("role") || "" : "";
+    const { selectedCompany, selectedBranch } = useApp();
     const [searchQuery, setSearchQuery] = useState("");
     const [openModal, setOpenModal] = useState(false);
     const [trucks, setTrucks] = useState([]);
@@ -94,99 +247,16 @@ export default function TruckPage() {
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [totalElements, setTotalElements] = useState(0);
 
-    const fetchInitialData = async () => {
-        setIsLoading(true);
-        try {
-            const [transResp, custResp] = await Promise.all([
-                transporterApi.getAll(0, 1000),
-                customerApi.getAll(0, 1000)
-            ]);
-
-            if (transResp.success) setTransporters(transResp.data.content || []);
-            if (custResp.success) setCustomers(custResp.data.content || []);
-
-            await fetchTrucks();
-        } catch (error) {
-            console.error("Error fetching initial data:", error);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const fetchTrucks = async () => {
-        try {
-            const response = await truckApi.getAll(page, rowsPerPage, searchQuery);
-            if (response.success) {
-                setTrucks(response.data.content);
-                setTotalElements(response.data.totalElements);
-            }
-        } catch (error) {
-            console.error("Error fetching trucks:", error);
-        }
-    };
-
-    useEffect(() => {
-        const storedUser = localStorage.getItem("user");
-        if (storedUser) {
-            try {
-                const userData = JSON.parse(storedUser);
-                setCurrentUser(userData);
-                if (userData.role === "ADMIN") {
-                    adminApi.getCompanies(0, 1000).then(resp => {
-                        if (resp.success) {
-                            setAllCompanies(resp.data.content);
-                        }
-                    });
-                } else if (userData.companies) {
-                    setUserCompanyInfo(userData.companies);
-                    if (userData.companies.length > 0) {
-                        formik.setFieldValue("companyId", userData.companies[0].companyId);
-                        formik.setFieldValue("branchId", userData.companies[0].branchId || "");
-                    }
-                }
-            } catch (e) {
-                console.error("Error parsing user data", e);
-            }
-        }
-        fetchInitialData();
-    }, []);
-
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            fetchTrucks();
-        }, 300);
-        return () => clearTimeout(timer);
-    }, [page, rowsPerPage, searchQuery]);
-
-    const handleChangePage = (event, newPage) => {
-        setPage(newPage);
-    };
-
-    const handleChangeRowsPerPage = (event) => {
-        setRowsPerPage(parseInt(event.target.value, 10));
-        setPage(0);
-    };
+    const steps = ["General Truck Details", "Documents & Validity"];
 
     const truckValidationSchema = Yup.object({
         truckNo: Yup.string().required("Truck number is required"),
         ownershipType: Yup.string().required("Ownership type is required"),
         tareWeight: Yup.number().typeError("Tare weight must be a number").required("Tare weight is required"),
-        transporterId: Yup.string().when('ownershipType', {
-            is: 'TRANSPORTER',
-            then: (schema) => schema.required("Transporter selection is required"),
-            otherwise: (schema) => schema.notRequired()
-        }),
-        customerId: Yup.string().when('ownershipType', {
-            is: 'CUSTOMER',
-            then: (schema) => schema.required("Customer selection is required"),
-            otherwise: (schema) => schema.notRequired()
-        })
     });
 
     const formik = useFormik({
         initialValues: {
-            companyId: "",
-            branchId: "",
             truckNo: "",
             ownershipType: "OWN",
             registerName: "",
@@ -205,7 +275,6 @@ export default function TruckPage() {
         },
         validationSchema: truckValidationSchema,
         onSubmit: async (values, { setSubmitting }) => {
-            // Only submit on the final step
             if (activeStep !== steps.length - 1) {
                 setSubmitting(false);
                 return;
@@ -213,8 +282,6 @@ export default function TruckPage() {
             try {
                 const payload = {
                     ...values,
-                    companyId: values.companyId || null,
-                    branchId: values.branchId || null,
                     transporterId: values.ownershipType === "TRANSPORTER" && values.transporterId ? values.transporterId : null,
                     customerId: values.ownershipType === "CUSTOMER" && values.customerId ? values.customerId : null,
                     tareWeight: parseFloat(values.tareWeight) || 0,
@@ -238,8 +305,64 @@ export default function TruckPage() {
         },
     });
 
-    const steps = ["General Truck Details", "Documents & Validity"];
+    const [assignModalOpen, setAssignModalOpen] = useState(false);
+    const [assigningTruckId, setAssigningTruckId] = useState(null);
 
+    const fetchTrucks = async () => {
+        try {
+            const companyId = selectedCompany?.id || selectedCompany?.companyId || null;
+            const branchId = selectedBranch?.id || null;
+            const response = await truckApi.getAll(page, rowsPerPage, searchQuery, companyId, branchId);
+            if (response.success) {
+                setTrucks(response.data.content);
+                setTotalElements(response.data.totalElements);
+            }
+        } catch (error) {
+            console.error("Error fetching trucks:", error);
+        }
+    };
+
+    const fetchInitialData = async () => {
+        setIsLoading(true);
+        try {
+            const companyId = selectedCompany?.id || selectedCompany?.companyId || null;
+            const branchId = selectedBranch?.id || null;
+
+            const custResp = await customerApi.getAll(0, 1000, "", companyId, branchId);
+            if (custResp.success) setCustomers(custResp.data.content || []);
+            
+            // Fetch transporters globally since trucks are master records
+            const transResp = await transporterApi.getAll(0, 1000, "", companyId, branchId);
+            if (transResp.success) setTransporters(transResp.data.content || []);
+
+            await fetchTrucks();
+        } catch (error) {
+            console.error("Error fetching initial data:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchInitialData();
+        setPage(0);
+    }, [selectedCompany, selectedBranch]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            fetchTrucks();
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [page, rowsPerPage, searchQuery, selectedCompany, selectedBranch]);
+
+    const handleChangePage = (event, newPage) => {
+        setPage(newPage);
+    };
+
+    const handleChangeRowsPerPage = (event) => {
+        setRowsPerPage(parseInt(event.target.value, 10));
+        setPage(0);
+    };
     const handleNext = async () => {
         if (activeStep === 0) {
             const fieldsToValidate = ["truckNo", "ownershipType", "tareWeight"];
@@ -330,8 +453,6 @@ export default function TruckPage() {
         setIsEditing(true);
         setEditingId(truck.id);
         formik.setValues({
-            companyId: truck.companyId || (userCompanyInfo.length > 0 ? userCompanyInfo[0].companyId : ""),
-            branchId: truck.branchId || (userCompanyInfo.length > 0 ? userCompanyInfo[0].branchId : ""),
             truckNo: truck.truckNo || "",
             ownershipType: truck.ownershipType || "OWN",
             registerName: truck.registerName || "",
@@ -385,6 +506,23 @@ export default function TruckPage() {
         } finally {
             setDeleteConfirmOpen(false);
             setDeleteTargetId(null);
+        }
+    };
+
+    const handleUnassign = async (assignmentId) => {
+        try {
+            const res = await truckApi.removeAssignment(assignmentId);
+            if (res.success) {
+                setSnackbar({ open: true, message: "Unlinked successfully", severity: "success" });
+                // If it's the selected truck in view modal, we need to update its local state
+                if (selectedTruck) {
+                    const updatedAssignments = selectedTruck.assignments.filter(a => a.id !== assignmentId);
+                    setSelectedTruck({ ...selectedTruck, assignments: updatedAssignments });
+                }
+                fetchTrucks();
+            }
+        } catch (error) {
+            setSnackbar({ open: true, message: "Error unlinking", severity: "error" });
         }
     };
 
@@ -531,22 +669,7 @@ export default function TruckPage() {
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: gap }}>
                     <Box sx={{ width: '100%', mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Basic Information</Typography></Box>
                     
-                    <Box sx={{ width: itemWidth }}>
-                        {currentUser?.role === "ADMIN" 
-                            ? renderField("Company *", "Select Company", true, "text", "companyId", allCompanies.map(c => ({ label: c.name, value: c.id })))
-                            : renderField("Company *", "Select Company", true, "text", "companyId", userCompanyInfo.map(c => ({ label: c.companyName, value: c.companyId })))
-                        }
-                    </Box>
-                    <Box sx={{ width: itemWidth }}>
-                        <BranchDropdown
-                            companyId={formik.values.companyId}
-                            value={formik.values.branchId}
-                            onChange={(val) => formik.setFieldValue("branchId", val)}
-                            renderField={renderField}
-                        />
-                    </Box>
-
-                    <Box sx={{ width: itemWidth }}>{renderField("Truck Number *", "Enter truck number (e.g. MH12AB1234)", false, "text", "truckNo")}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Vehicle Number *", "Enter truck number (e.g. MH12AB1234)", false, "text", "truckNo")}</Box>
                     <Box sx={{ width: itemWidth }}>{renderField("Ownership Type *", "Select type", true, "text", "ownershipType", [
                         { label: "Owned", value: "OWN" },
                         { label: "Transporter", value: "TRANSPORTER" },
@@ -575,7 +698,7 @@ export default function TruckPage() {
                     <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Technical Specifications</Typography></Box>
                     <Box sx={{ width: itemWidth }}>{renderField("Make", "Enter make", false, "text", "make")}</Box>
                     <Box sx={{ width: itemWidth }}>{renderField("Model", "Enter model", false, "text", "model")}</Box>
-                    <Box sx={{ width: itemWidth }}>{renderField("Usage Type", "Select usage", true, "text", "usageType", [
+                    <Box sx={{ width: itemWidth }}>{renderField("Vehicle Type", "Select vehicle type", true, "text", "usageType", [
                         { label: "Commercial", value: "Commercial" },
                         { label: "Passenger", value: "Passenger" }
                     ])}</Box>
@@ -604,21 +727,21 @@ export default function TruckPage() {
                     </Box>
 
                     <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Insurance Details</Typography></Box>
-                    <Box sx={{ width: itemWidth }}>{renderField("Insurance Validity", "yyyy-mm-dd", false, "date", "insuranceValidity")}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Insurance expiry date ", "yyyy-mm-dd", false, "date", "insuranceValidity")}</Box>
                     <Box sx={{ width: itemWidth }}>
                         <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Upload Insurance</Typography>
                         {renderUploadButton("Upload Insurance", "insurance")}
                     </Box>
 
                     <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>Permit Details</Typography></Box>
-                    <Box sx={{ width: itemWidth }}>{renderField("Permit Validity", "yyyy-mm-dd", false, "date", "permitValidity")}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("Permit expiry date ", "yyyy-mm-dd", false, "date", "permitValidity")}</Box>
                     <Box sx={{ width: itemWidth }}>
                         <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Upload Permit</Typography>
                         {renderUploadButton("Upload Permit", "permit")}
                     </Box>
 
                     <Box sx={{ width: '100%', mt: 2, mb: 1 }}><Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827' }}>FC Details</Typography></Box>
-                    <Box sx={{ width: itemWidth }}>{renderField("FC Validity", "yyyy-mm-dd", false, "date", "fcValidity")}</Box>
+                    <Box sx={{ width: itemWidth }}>{renderField("FC expiry date", "yyyy-mm-dd", false, "date", "fcValidity")}</Box>
                     <Box sx={{ width: itemWidth }}>
                         <Typography sx={{ fontSize: '13px', color: '#374151', mb: 0.8, fontWeight: 600 }}>Upload FC</Typography>
                         {renderUploadButton("Upload FC", "fc")}
@@ -712,22 +835,27 @@ export default function TruckPage() {
                             </TableRow>
                         </TableHead>
                         <TableBody>
-                            {isLoading ? (
+                               {isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
                                         <CircularProgress size={24} />
                                     </TableCell>
                                 </TableRow>
                             ) : trucks.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
                                         <Typography color="textSecondary">No trucks found</Typography>
                                     </TableCell>
                                 </TableRow>
                             ) : trucks.map((t) => (
                                 <TableRow key={t.id} sx={{ '&:hover': { backgroundColor: palette.background.paper } }}>
-                                    <TableCell sx={{ fontWeight: 700, color: '#0057FF' }}>{t.truckCode || 'N/A'}</TableCell>
-                                    <TableCell sx={{ fontWeight: 500, color: palette.text.primary }}>{t.truckNo}</TableCell>
+                                    <TableCell sx={{ fontWeight: 800, color: '#0057FF' }}>{t.truckCode || 'N/A'}</TableCell>
+                                    <TableCell sx={{ fontWeight: 700, color: palette.text.primary }}>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <GlobalTruckIcon sx={{ fontSize: 18, color: palette.primary.main }} />
+                                            {t.truckNo}
+                                        </Box>
+                                    </TableCell>
                                     <TableCell>
                                         <Box sx={{
                                             display: 'inline-block', px: 1.5, py: 0.5, borderRadius: '12px',
@@ -743,34 +871,44 @@ export default function TruckPage() {
                                             t.ownershipType === 'TRANSPORTER' ? t.transporterName :
                                                 t.customerName}
                                     </TableCell>
-                                    <TableCell>{t.tareWeight} kg</TableCell>
+                                    <TableCell>
+                                        <Typography sx={{ fontWeight: 600, color: '#4B5563' }}>{t.tareWeight} kg</Typography>
+                                    </TableCell>
                                     <TableCell align="center">
                                         <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                                            <Tooltip title="View">
-                                                <IconButton onClick={() => handleViewTruck(t)} sx={{ color: palette.primary.main }} size="small"><ViewIcon fontSize="small" /></IconButton>
+                                            <Tooltip title="Link to Branch">
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => {
+                                                        setAssigningTruckId(t.id);
+                                                        setAssignModalOpen(true);
+                                                    }}
+                                                    sx={{ color: '#10B981', backgroundColor: '#F0FDF4' }}
+                                                >
+                                                    <AddIcon fontSize="small" />
+                                                </IconButton>
                                             </Tooltip>
-                                            {(userRole !== 'PARTNER' && userRole !== 'ROLE_PARTNER') && (
-                                                <>
-                                                    <Tooltip title="Edit">
-                                                        <IconButton
-                                                            size="small"
-                                                            sx={{ color: '#0057FF' }}
-                                                            onClick={() => handleEditTruck(t)}
-                                                        >
-                                                            <EditIcon fontSize="small" />
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                    <Tooltip title="Delete">
-                                                        <IconButton
-                                                            size="small"
-                                                            sx={{ color: '#EF4444' }}
-                                                            onClick={() => handleDeleteClick(t.id)}
-                                                        >
-                                                            <DeleteIcon fontSize="small" />
-                                                        </IconButton>
-                                                    </Tooltip>
-                                                </>
-                                            )}
+                                            <Tooltip title="View Details">
+                                                <IconButton onClick={() => handleViewTruck(t)} sx={{ color: palette.primary.main, backgroundColor: 'rgba(0, 87, 255, 0.05)' }} size="small"><ViewIcon fontSize="small" /></IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Edit">
+                                                <IconButton
+                                                    size="small"
+                                                    sx={{ color: '#0057FF', backgroundColor: 'rgba(0, 87, 255, 0.05)' }}
+                                                    onClick={() => handleEditTruck(t)}
+                                                >
+                                                    <EditIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
+                                            <Tooltip title="Delete">
+                                                <IconButton
+                                                    size="small"
+                                                    sx={{ color: '#EF4444', backgroundColor: '#FEF2F2' }}
+                                                    onClick={() => handleDeleteClick(t.id)}
+                                                >
+                                                    <DeleteIcon fontSize="small" />
+                                                </IconButton>
+                                            </Tooltip>
                                         </Box>
                                     </TableCell>
                                 </TableRow>
@@ -915,125 +1053,111 @@ export default function TruckPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* View Truck Details Modal */}
-            <Dialog
-                open={viewModalOpen}
-                onClose={() => setViewModalOpen(false)}
-                maxWidth="md"
-                fullWidth
-                sx={{
-                    '& .MuiDialog-container': {
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginLeft: { md: '280px' },
-                        width: { md: 'calc(100% - 280px)' }
-                    },
-                    '& .MuiBackdrop-root': {
-                        marginLeft: { md: '280px' }
-                    }
-                }}
-                PaperProps={{
-                    sx: {
-                        borderRadius: '24px',
-                        padding: '16px',
-                        backgroundColor: '#F8FAFC'
-                    }
-                }}
-            >
-                <DialogContent sx={{ p: { xs: 2, sm: 4 } }}>
+            {/* View Modal */}
+            <Dialog open={viewModalOpen} onClose={() => setViewModalOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: '24px', p: 2, backgroundColor: '#F8FAFC' } }}>
+                <DialogContent>
                     {selectedTruck && (
-                        <Box>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                        <Box sx={{ p: 1 }}>
+                            {/* Header Section */}
+                            <Box sx={{ 
+                                mb: 4, 
+                                p: 3, 
+                                borderRadius: '24px', 
+                                background: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+                                color: '#fff',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)'
+                            }}>
                                 <Box>
-                                    <Typography variant="h4" sx={{ fontWeight: 900, color: '#111827' }}>
-                                        {selectedTruck.truckNo}
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>
-                                        Make: {selectedTruck.make || "N/A"} | Model: {selectedTruck.model || "N/A"}
-                                    </Typography>
+                                    <Typography sx={{ fontSize: '12px', color: 'rgba(255,255,255,0.6)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1px', mb: 0.5 }}>Vehicle Master Profile</Typography>
+                                    <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: '-0.5px' }}>{selectedTruck.truckNo}</Typography>
+                                    <Box sx={{ display: 'flex', gap: 2, mt: 1, alignItems: 'center' }}>
+                                        <Box sx={{ px: 1.5, py: 0.5, borderRadius: '8px', backgroundColor: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', fontSize: '11px', fontWeight: 700 }}>
+                                            {selectedTruck.truckCode}
+                                        </Box>
+                                        <Typography sx={{ fontSize: '14px', color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <FactoryIcon sx={{ fontSize: 16 }} /> {selectedTruck.make || "N/A"} {selectedTruck.model}
+                                        </Typography>
+                                    </Box>
                                 </Box>
-                                <Box sx={{
-                                    px: 2, py: 1, borderRadius: '12px',
-                                    backgroundColor: '#EBFDF5',
-                                    color: '#10B981',
-                                    fontWeight: 700, fontSize: '13px'
-                                }}>
-                                    {selectedTruck.ownershipType}
+                                <Box sx={{ backgroundColor: 'rgba(255,255,255,0.1)', p: 2, borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    <GlobalTruckIcon sx={{ fontSize: '40px', color: 'rgba(255,255,255,0.4)' }} />
                                 </Box>
                             </Box>
 
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                                <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
-                                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Box sx={{ width: 4, height: 16, backgroundColor: '#2D3FE2', borderRadius: 2 }} />
-                                        Ownership & Registration
-                                    </Typography>
-                                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 3 }}>
-                                        <DetailItem label="Truck Number" value={selectedTruck.truckNo} />
-                                        <DetailItem label="Ownership Type" value={selectedTruck.ownershipType} />
-                                        <DetailItem label="Owner/Partner" value={
-                                            selectedTruck.ownershipType === 'OWN' ? (selectedTruck.ownerName || 'Company') :
-                                                selectedTruck.ownershipType === 'TRANSPORTER' ? selectedTruck.transporterName :
-                                                    selectedTruck.customerName
-                                        } />
-                                        <DetailItem label="Tare Weight" value={`${selectedTruck.tareWeight} kg`} />
-                                        <DetailItem label="Usage Type" value={selectedTruck.usageType} />
-                                        <DetailItem label="Fuel Type" value={selectedTruck.fuelType} />
-                                    </Box>
-                                </Card>
+                            <Grid container spacing={3}>
+                                {/* Left Side: Details */}
+                                <Grid item xs={12} md={7}>
+                                    <Card sx={{ p: 4, borderRadius: '24px', border: '1px solid #f1f5f9', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                                        <Typography sx={{ fontWeight: 800, fontSize: '18px', mb: 3, color: '#1e293b' }}>Technical Specifications</Typography>
+                                        <Grid container spacing={3}>
+                                            <Grid item xs={6}><DetailItem label="Ownership" value={selectedTruck.ownershipType} /></Grid>
+                                            <Grid item xs={6}><DetailItem label="Partner" value={selectedTruck.transporterName || selectedTruck.customerName || "OWN"} /></Grid>
+                                            <Grid item xs={6}><DetailItem label="Tare Weight" value={`${selectedTruck.tareWeight} KG`} /></Grid>
+                                            <Grid item xs={6}><DetailItem label="Fuel Type" value={selectedTruck.fuelType} /></Grid>
+                                            <Grid item xs={12}><Divider sx={{ borderStyle: 'dashed' }} /></Grid>
+                                            <Grid item xs={6}><DetailItem label="Engine No" value={selectedTruck.engineNo} /></Grid>
+                                            <Grid item xs={6}><DetailItem label="Chassis No" value={selectedTruck.chassisNo} /></Grid>
+                                        </Grid>
 
-                                <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
-                                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Box sx={{ width: 4, height: 16, backgroundColor: '#10B981', borderRadius: 2 }} />
-                                        Technical Specifications
-                                    </Typography>
-                                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
-                                        <DetailItem label="Make" value={selectedTruck.make} />
-                                        <DetailItem label="Model" value={selectedTruck.model} />
-                                        <DetailItem label="Engine Number" value={selectedTruck.engineNo} />
-                                        <DetailItem label="Chassis Number" value={selectedTruck.chassisNo} />
-                                    </Box>
-                                </Card>
+                                        <Typography sx={{ fontWeight: 800, fontSize: '18px', mt: 4, mb: 3, color: '#1e293b' }}>Documents & Validity</Typography>
+                                        <Grid container spacing={2}>
+                                            <Grid item xs={12}>
+                                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                                                    {selectedTruck.rcFrontPath && <Button variant="outlined" size="small" onClick={() => window.open(`http://localhost:8080/uploads/${selectedTruck.rcFrontPath}`)} sx={{ borderRadius: '8px', textTransform: 'none' }}>RC Front</Button>}
+                                                    {selectedTruck.rcBackPath && <Button variant="outlined" size="small" onClick={() => window.open(`http://localhost:8080/uploads/${selectedTruck.rcBackPath}`)} sx={{ borderRadius: '8px', textTransform: 'none' }}>RC Back</Button>}
+                                                    {selectedTruck.insurancePath && <Button variant="outlined" size="small" onClick={() => window.open(`http://localhost:8080/uploads/${selectedTruck.insurancePath}`)} sx={{ borderRadius: '8px', textTransform: 'none' }}>Insurance</Button>}
+                                                    {selectedTruck.permitPath && <Button variant="outlined" size="small" onClick={() => window.open(`http://localhost:8080/uploads/${selectedTruck.permitPath}`)} sx={{ borderRadius: '8px', textTransform: 'none' }}>Permit</Button>}
+                                                    {selectedTruck.fcPath && <Button variant="outlined" size="small" onClick={() => window.open(`http://localhost:8080/uploads/${selectedTruck.fcPath}`)} sx={{ borderRadius: '8px', textTransform: 'none' }}>FC</Button>}
+                                                </Box>
+                                            </Grid>
+                                            <Grid item xs={4}><DetailItem label="Insurance Exp" value={selectedTruck.insuranceValidity} color="#EF4444" /></Grid>
+                                            <Grid item xs={4}><DetailItem label="Permit Exp" value={selectedTruck.permitValidity} color="#EF4444" /></Grid>
+                                            <Grid item xs={4}><DetailItem label="FC Exp" value={selectedTruck.fcValidity} color="#EF4444" /></Grid>
+                                        </Grid>
+                                    </Card>
+                                </Grid>
 
-                                <Card sx={{ flex: '1 1 100%', borderRadius: '16px', p: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.03)' }}>
-                                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#111827', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                                        <Box sx={{ width: 4, height: 16, backgroundColor: '#F59E0B', borderRadius: 2 }} />
-                                        Documents & Validity
-                                    </Typography>
-                                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 3, mb: 3 }}>
-                                        <DetailItem label="Insurance Validity" value={selectedTruck.insuranceValidity} />
-                                        <DetailItem label="Permit Validity" value={selectedTruck.permitValidity} />
-                                        <DetailItem label="FC Validity" value={selectedTruck.fcValidity} />
-                                    </Box>
-                                    <Divider sx={{ my: 2 }} />
-                                    <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', mb: 1.5 }}>
-                                        Attached Documents
-                                    </Typography>
-                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-                                        {selectedTruck.rcFrontPath && <DocumentButton label="RC Front" path={selectedTruck.rcFrontPath} />}
-                                        {selectedTruck.rcBackPath && <DocumentButton label="RC Back" path={selectedTruck.rcBackPath} />}
-                                        {selectedTruck.insurancePath && <DocumentButton label="Insurance" path={selectedTruck.insurancePath} />}
-                                        {selectedTruck.permitPath && <DocumentButton label="Permit" path={selectedTruck.permitPath} />}
-                                        {selectedTruck.fcPath && <DocumentButton label="FC" path={selectedTruck.fcPath} />}
-                                        {!selectedTruck.rcFrontPath && !selectedTruck.rcBackPath && !selectedTruck.insurancePath && !selectedTruck.permitPath && !selectedTruck.fcPath && (
-                                            <Typography variant="body2" sx={{ color: '#9CA3AF', fontStyle: 'italic' }}>No documents uploaded</Typography>
-                                        )}
-                                    </Box>
-                                </Card>
-                            </Box>
+                                {/* Right Side: Linked Branches */}
+                                <Grid item xs={12} md={5}>
+                                    <Card sx={{ p: 4, borderRadius: '24px', backgroundColor: '#f8fafc', border: '1px solid #f1f5f9', height: '100%' }}>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                                            <Typography sx={{ fontWeight: 800, fontSize: '18px', color: '#1e293b' }}>Linked Branches</Typography>
+                                            <Box sx={{ backgroundColor: '#e0f2fe', color: '#0369a1', px: 1.5, py: 0.5, borderRadius: '8px', fontSize: '11px', fontWeight: 700 }}>
+                                                {selectedTruck.assignments?.length || 0} Active
+                                            </Box>
+                                        </Box>
 
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
-                                <Button
-                                    onClick={() => setViewModalOpen(false)}
-                                    variant="contained"
-                                    sx={{
-                                        borderRadius: '12px', px: 6, py: 1.2,
-                                        textTransform: 'none', fontWeight: 700,
-                                        backgroundColor: '#111827',
-                                        '&:hover': { backgroundColor: '#000' }
-                                    }}
-                                >
-                                    Close
+                                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                            {selectedTruck.assignments?.length > 0 ? (
+                                                selectedTruck.assignments.map(a => (
+                                                    <Box key={a.id} sx={{ p: 2, borderRadius: '16px', backgroundColor: '#fff', border: '1px solid #e2e8f0' }}>
+                                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                            <Box>
+                                                                <Typography sx={{ fontSize: '14px', fontWeight: 700, color: '#1e293b' }}>{a.companyName}</Typography>
+                                                                <Typography sx={{ fontSize: '12px', color: '#64748b', fontWeight: 500 }}>{a.branchName}</Typography>
+                                                            </Box>
+                                                            <IconButton size="small" sx={{ color: '#ef4444', backgroundColor: '#fee2e2' }} onClick={() => handleUnassign(a.id)}>
+                                                                <UnlinkIcon sx={{ fontSize: '14px' }} />
+                                                            </IconButton>
+                                                        </Box>
+                                                    </Box>
+                                                ))
+                                            ) : (
+                                                <Box sx={{ py: 6, textAlign: 'center', backgroundColor: '#f1f5f9', borderRadius: '16px', border: '2px dashed #e2e8f0' }}>
+                                                    <Typography sx={{ color: '#94a3b8', fontSize: '13px' }}>Not linked to any branch</Typography>
+                                                </Box>
+                                            )}
+                                        </Box>
+                                    </Card>
+                                </Grid>
+                            </Grid>
+
+                            <Box sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}>
+                                <Button onClick={() => setViewModalOpen(false)} variant="outlined" sx={{ borderRadius: '12px', px: 6, py: 1, textTransform: 'none', fontWeight: 700 }}>
+                                    Close Window
                                 </Button>
                             </Box>
                         </Box>
@@ -1041,50 +1165,21 @@ export default function TruckPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* Notification Snackbar */}
-            <Snackbar
-                open={snackbar.open}
-                autoHideDuration={6000}
-                onClose={handleCloseSnackbar}
-                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            >
-                <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%', borderRadius: '12px', fontWeight: 600 }}>
-                    {snackbar.message}
-                </Alert>
+            <AssignBranchModal open={assignModalOpen} onClose={() => setAssignModalOpen(false)} truckId={assigningTruckId} onAssigned={fetchTrucks} />
+
+            <Snackbar open={snackbar.open} autoHideDuration={6000} onClose={handleCloseSnackbar} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
+                <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} sx={{ width: '100%', borderRadius: '12px', fontWeight: 600 }}>{snackbar.message}</Alert>
             </Snackbar>
 
-            {/* Delete Confirmation Dialog */}
-            <Dialog
-                open={deleteConfirmOpen}
-                onClose={() => setDeleteConfirmOpen(false)}
-                sx={{
-                    '& .MuiDialog-container': { alignItems: 'center', justifyContent: 'center', marginLeft: { md: '280px' }, width: { md: 'calc(100% - 280px)' } },
-                    '& .MuiBackdrop-root': { marginLeft: { md: '280px' } }
-                }}
-                PaperProps={{ sx: { borderRadius: '24px', padding: '16px', maxWidth: '400px', boxShadow: '0 10px 40px rgba(0,0,0,0.1)' } }}
-            >
+            <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)} PaperProps={{ sx: { borderRadius: '24px', padding: '16px', maxWidth: '400px' } }}>
                 <DialogContent>
-                    <Box sx={{ textAlign: 'center', py: 2 }}>
-                        <Box sx={{ width: 64, height: 64, borderRadius: '50%', backgroundColor: '#FEF2F2', display: 'flex', justifyContent: 'center', alignItems: 'center', margin: '0 auto', mb: 3 }}>
-                            <DeleteIcon sx={{ fontSize: '32px', color: '#EF4444' }} />
-                        </Box>
-                        <Typography variant="h5" sx={{ fontWeight: 800, mb: 1, color: '#111827' }}>Delete Truck</Typography>
-                        <Typography variant="body2" sx={{ color: '#6B7280', mb: 4, lineHeight: 1.6 }}>Are you sure you want to delete this truck? This action cannot be undone and the record will be permanently removed.</Typography>
+                    <Box sx={{ textAlign: 'center' }}>
+                        <DeleteIcon sx={{ fontSize: '48px', color: '#EF4444', mb: 2 }} />
+                        <Typography variant="h5" sx={{ fontWeight: 800, mb: 1 }}>Delete Truck?</Typography>
+                        <Typography variant="body2" sx={{ color: '#6B7280', mb: 4 }}>This will permanently remove the truck and all its branch associations.</Typography>
                         <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-                            <Button
-                                onClick={() => setDeleteConfirmOpen(false)}
-                                variant="outlined"
-                                sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, color: '#6B7280', px: 4, py: 1, border: '1px solid #E5E7EB', '&:hover': { backgroundColor: '#F9FAFB' } }}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                onClick={handleConfirmDelete}
-                                variant="contained"
-                                sx={{ borderRadius: '12px', textTransform: 'none', fontWeight: 600, backgroundColor: '#EF4444', px: 4, py: 1, '&:hover': { backgroundColor: '#DC2626' }, boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)' }}
-                            >
-                                Delete
-                            </Button>
+                            <Button onClick={() => setDeleteConfirmOpen(false)} variant="outlined" sx={{ borderRadius: '12px', px: 4 }}>Cancel</Button>
+                            <Button onClick={handleConfirmDelete} variant="contained" color="error" sx={{ borderRadius: '12px', px: 4 }}>Delete Now</Button>
                         </Box>
                     </Box>
                 </DialogContent>
@@ -1092,35 +1187,3 @@ export default function TruckPage() {
         </Box>
     );
 }
-
-// Helper Components for the View Modal
-const DetailItem = ({ label, value }) => (
-    <Box>
-        <Typography sx={{ fontSize: '11px', color: '#9CA3AF', fontWeight: 700, textTransform: 'uppercase', mb: 0.5 }}>
-            {label}
-        </Typography>
-        <Typography sx={{ fontSize: '14px', color: '#374151', fontWeight: 600 }}>
-            {value || "—"}
-        </Typography>
-    </Box>
-);
-
-const DocumentButton = ({ label, path }) => (
-    <Button
-        variant="outlined"
-        size="small"
-        startIcon={<ViewIcon sx={{ fontSize: '16px' }} />}
-        onClick={() => window.open(`http://localhost:8080/uploads/${path}`, '_blank')}
-        sx={{
-            borderRadius: '8px',
-            borderColor: '#E5E7EB',
-            color: '#374151',
-            textTransform: 'none',
-            fontSize: '12px',
-            fontWeight: 600,
-            '&:hover': { backgroundColor: '#F9FAFB', borderColor: '#D1D5DB' }
-        }}
-    >
-        {label}
-    </Button>
-);

@@ -14,6 +14,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.keydraft.mines.dto.EmployeeAssignmentResponse;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -55,5 +58,20 @@ public class EmployeeController {
     public ResponseEntity<ApiResponse<Void>> deleteEmployee(@PathVariable UUID id) {
         employeeService.deleteEmployee(id);
         return ResponseEntity.ok(ApiResponse.success(null, "Employee deleted successfully"));
+    }
+
+    @PostMapping("/{id}/transfer")
+    public ResponseEntity<ApiResponse<EmployeeResponse>> transferEmployee(
+            @PathVariable UUID id,
+            @RequestParam UUID targetBranchId,
+            @RequestParam String transferDate) {
+        LocalDate date = LocalDate.parse(transferDate);
+        EmployeeResponse response = employeeService.transferEmployee(id, targetBranchId, date);
+        return ResponseEntity.ok(ApiResponse.success(response, "Employee transferred successfully"));
+    }
+
+    @GetMapping("/{id}/history")
+    public ResponseEntity<ApiResponse<List<EmployeeAssignmentResponse>>> getEmployeeHistory(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.success(employeeService.getEmployeeHistory(id), "Employee history fetched successfully"));
     }
 }
